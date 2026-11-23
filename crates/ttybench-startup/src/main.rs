@@ -121,6 +121,7 @@ fn run() -> Result<(), String> {
                 unit: "ms".into(),
                 samples,
                 conditions: conditions.clone(),
+                cycle: None,
             })
             .map_err(|error| format!("the session's records: {error}"))?;
     }

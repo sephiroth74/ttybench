@@ -29,6 +29,35 @@ launch = "open"
 
 The tools read `--terminals <file>`, else `$TTYBENCH_TERMINALS`, else `terminals.toml` in the current folder, else `~/.config/ttybench/terminals.toml`.
 
+## Run a session
+
+`ttybench run` runs a session that a file describes: the terminals, the tools and their arguments, and how many cycles. Copy [`examples/session.toml`](examples/session.toml):
+
+```toml
+terminals = ["ghostty", "kitty"]
+pause = 5        # seconds before each run
+cycles = 2       # each of another order
+
+[[run]]
+tool = "startup"
+rounds = 10
+
+[[run]]
+tool = "throughput"
+args = ["--text", "plain"]
+```
+
+```sh
+ttybench run session.toml --dry-run   # the runs, in their order
+ttybench run session.toml
+```
+
+- **Balanced orders**: each cycle turns each run's terminals by one, so that over as many cycles as a run has terminals each one runs first as often as last. ttybench tells you when the cycles don't balance them.
+- **The session's folder**, `sessions/<date>` by default, keeps a copy of the session's and the terminals' files, `machine.json`, `runs.jsonl` of each run's end, `records.jsonl` of every record, each of its cycle, and a folder of each run of its output.
+- **A run that fails** is told, with its output's last lines, and the session goes on. `ttybench run --resume <folder>` takes up a session that was cut off, or runs its failed runs again; what ended well stays as it is.
+- **`season`** launches each terminal that many times before the first run, not counted, as a terminal just built or installed starts slower for its first launches.
+- **`sudo = true`** on a run that needs `sudo`: the session asks for it once and keeps it.
+
 ## The tools
 
 ### startup

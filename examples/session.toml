@@ -1,0 +1,31 @@
+# A session of `ttybench run`: the terminals that it measures, by their
+# names in terminals.toml, and the tools that it runs on each.
+
+terminals = ["ghostty", "kitty", "lokyr"]
+# terminals-file = "terminals.toml"  # of this file's folder; else the one that the tools look for
+folder = "sessions/{date}"           # {date}: the date and the time that it starts
+pause = 5                            # seconds before each run
+cycles = 3                           # each of another order: a multiple of the terminals' number balances them
+season = 0                           # launches of each terminal before the first run, not counted
+# rounds = 5                         # each run's --rounds, unless it says
+# timeout = 1800                     # the seconds that a run may take before it is stopped
+
+[[run]]
+tool = "startup"
+rounds = 10
+
+[[run]]
+tool = "idle"
+args = ["--duration", "10"]
+
+[[run]]
+tool = "memory"
+
+[[run]]
+tool = "throughput"
+args = ["--text", "plain"]
+
+[[run]]
+tool = "throughput"
+args = ["--text", "colors"]
+terminals = ["ghostty", "lokyr"]

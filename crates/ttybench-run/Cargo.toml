@@ -1,0 +1,17 @@
+[package]
+name = "ttybench-run"
+description = "The coordinator: a session of terminals and tools, in balanced orders, its records gathered into its folder."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ttybench-core.workspace = true
+
+[lints]
+workspace = true

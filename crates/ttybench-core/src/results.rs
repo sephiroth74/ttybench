@@ -36,6 +36,10 @@ pub struct Record {
     /// What it was taken of, as `{"workload": "cat", "mib": 64}`.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub conditions: serde_json::Map<String, serde_json::Value>,
+    /// The cycle of the coordinator's session that took it, from 1, if
+    /// the coordinator ran its tool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cycle: Option<u32>,
 }
 
 /// The machine that a session measured on.
@@ -181,6 +185,7 @@ mod tests {
             unit: "MiB/s".into(),
             samples: vec![300.5, 301.0],
             conditions,
+            cycle: None,
         };
         session.append(&record).unwrap();
         session.append(&record).unwrap();

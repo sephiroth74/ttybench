@@ -272,6 +272,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ttybench-run"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "ttybench-core",
+]
+
+[[package]]
 name = "ttybench-startup"
 version = "0.1.0"
 dependencies = [
