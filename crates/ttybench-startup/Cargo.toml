@@ -1,0 +1,15 @@
+[package]
+name = "ttybench-startup"
+description = "How fast a terminal starts: from its launch to its window on screen, and to its shell running the command."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+ttybench-core.workspace = true
+
+[lints]
+workspace = true
