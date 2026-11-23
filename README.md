@@ -64,10 +64,10 @@ ttybench memory --terminal ghostty --rounds 3
 How fast a terminal prints: the MiB a second of a file that it prints, of plain text, of a color before every character, or of wide characters that take two cells each.
 
 ```sh
-ttybench throughput --terminal ghostty --text plain --mib 64 --rounds 5
+ttybench throughput --terminal ghostty --text plain --mib 256 --rounds 5
 ```
 
-Each round launches the terminal running `ttybench-payload`, which prints a file of `--mib` MiB as fast as the terminal takes it. Two rates come of each round: to the last byte's write, as the terminal took the bytes, and to the quiet, as its processes' CPU drops below 5 % of a core for 60 ms, once it has drawn what it took. `--text` is `plain`, `colors` or `wide`.
+Each round launches the terminal running `ttybench-payload`, which prints a file of `--mib` MiB, 256 by default, as fast as the terminal takes it: a smaller file leaves more of its time to the window's first frames. Two rates come of each round: to the last byte's write, as the terminal took the bytes, and to the quiet, as its processes' CPU drops below 5 % of a core for 60 ms, once it has drawn what it took. `--text` is `plain`, `colors` or `wide`.
 
 ## License
 

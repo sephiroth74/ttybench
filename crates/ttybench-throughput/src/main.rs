@@ -64,7 +64,7 @@ fn run() -> Result<(), String> {
     )?;
     let (name, terminal) = cli::terminal(&args)?;
     let text = args.value("text").unwrap_or("plain");
-    let mib: u64 = args.number("mib", 64)?;
+    let mib: u64 = args.number("mib", 256)?;
     let rounds: usize = args.number("rounds", 5)?;
     let pause = Duration::from_secs_f64(args.number("pause", 2.0)?);
     let session = Session::open(Path::new(
