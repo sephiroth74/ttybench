@@ -1,0 +1,20 @@
+[package]
+name = "ttybench-payload"
+description = "The program that ttybench runs inside every terminal: it tells it is ready, prints the workloads and reads the keys."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+libc.workspace = true
+serde_json.workspace = true
+ttybench-core.workspace = true
+
+[dev-dependencies]
+libc.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
