@@ -1,0 +1,11 @@
+[package]
+name = "ttybench-core"
+description = "The library that ttybench's tools share: finding the tools, the terminals' config, their launch, the results."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true

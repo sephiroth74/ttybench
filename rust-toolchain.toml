@@ -1,0 +1,7 @@
+[toolchain]
+# Pinned on purpose: bump it in a dedicated commit, never as a side effect.
+channel = "1.99.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+# The tools measure terminals on macOS, of Apple Silicon.
+targets = ["aarch64-apple-darwin"]
