@@ -247,6 +247,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ttybench-idle"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "ttybench-core",
+]
+
+[[package]]
+name = "ttybench-memory"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "ttybench-core",
+]
+
+[[package]]
 name = "ttybench-payload"
 version = "0.1.0"
 dependencies = [

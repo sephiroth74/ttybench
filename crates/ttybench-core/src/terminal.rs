@@ -152,6 +152,30 @@ pub fn launch(
     }
 }
 
+/// Launches the terminal `name` of `terminal` running `payload`, in
+/// `cwd`, and waits for the payload's `ready` within `timeout`: the
+/// terminal and the event; the terminal quit of one that does not come.
+pub fn launch_ready(
+    name: &str,
+    terminal: &Terminal,
+    payload: &crate::payload::Payload,
+    cwd: &Path,
+    timeout: Duration,
+) -> Result<(Launched, serde_json::Value), String> {
+    let launched = launch(name, terminal, payload.command(), cwd, &[])
+        .map_err(|error| format!("{name} does not launch: {error}"))?;
+    match payload.wait("ready", timeout) {
+        Some(ready) => Ok((launched, ready)),
+        None => {
+            let _ = launched.quit(Duration::from_secs(5));
+            Err(format!(
+                "{name} ran no payload within {} s",
+                timeout.as_secs()
+            ))
+        }
+    }
+}
+
 impl Launched {
     /// Its tree of processes, its first first.
     pub fn tree(&self) -> Vec<libc::pid_t> {

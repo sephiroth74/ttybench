@@ -103,6 +103,88 @@ pub fn start_time(pid: libc::pid_t) -> io::Result<SystemTime> {
         + Duration::from_micros(info.pbi_start_tvusec))
 }
 
+/// What a process has used since it started: its CPU time, its wakeups,
+/// its energy, and its memory's footprint now and at its peak.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct Usage {
+    /// CPU time, of the user and the system, in nanoseconds.
+    pub cpu_ns: u64,
+    /// Wakeups that brought a CPU package out of idle.
+    pub package_idle: u64,
+    /// Wakeups of interrupts, as timers.
+    pub interrupt: u64,
+    /// Energy, in nanojoules, as the kernel bills it.
+    pub energy_nj: u64,
+    /// Memory's footprint now, in bytes.
+    pub footprint: u64,
+    /// Memory's footprint at its highest, in bytes.
+    pub peak: u64,
+}
+
+/// What the process `pid` has used since it started.
+pub fn usage(pid: libc::pid_t) -> io::Result<Usage> {
+    let info = rusage(pid)?;
+    Ok(Usage {
+        cpu_ns: mach_to_ns(info.ri_user_time.saturating_add(info.ri_system_time)),
+        package_idle: info.ri_pkg_idle_wkups,
+        interrupt: info.ri_interrupt_wkups,
+        energy_nj: energy(pid).unwrap_or(0),
+        footprint: info.ri_phys_footprint,
+        peak: info.ri_lifetime_max_phys_footprint,
+    })
+}
+
+/// `ticks` of the Mach clock in nanoseconds, of the clock's timebase: the
+/// kernel counts a process's CPU time in those ticks.
+fn mach_to_ns(ticks: u64) -> u64 {
+    /// `<mach/mach_time.h>`'s `mach_timebase_info_data_t`.
+    #[repr(C)]
+    struct Timebase {
+        numer: u32,
+        denom: u32,
+    }
+    unsafe extern "C" {
+        fn mach_timebase_info(info: *mut Timebase) -> libc::c_int;
+    }
+    let mut timebase = Timebase { numer: 0, denom: 0 };
+    // SAFETY: `timebase` is a writable struct of the layout that the call
+    // fills in.
+    let status = unsafe { mach_timebase_info(&raw mut timebase) };
+    if status != 0 || timebase.denom == 0 {
+        return ticks;
+    }
+    u64::try_from(u128::from(ticks) * u128::from(timebase.numer) / u128::from(timebase.denom))
+        .unwrap_or(u64::MAX)
+}
+
+/// What each process of `pids` has used since it started, of those that
+/// run still.
+pub fn usages(pids: &[libc::pid_t]) -> Vec<(libc::pid_t, Usage)> {
+    pids.iter()
+        .filter_map(|&pid| Some((pid, usage(pid).ok()?)))
+        .collect()
+}
+
+/// What the processes of `after` used since `before`, summed: each process
+/// of both its difference, one that started since all of its own, one
+/// that ended since none; the memory's footprint and peak of `after`'s.
+pub fn used_between(before: &[(libc::pid_t, Usage)], after: &[(libc::pid_t, Usage)]) -> Usage {
+    let mut sum = Usage::default();
+    for (pid, now) in after {
+        let then = before
+            .iter()
+            .find(|(of, _)| of == pid)
+            .map_or_else(Usage::default, |&(_, usage)| usage);
+        sum.cpu_ns += now.cpu_ns.saturating_sub(then.cpu_ns);
+        sum.package_idle += now.package_idle.saturating_sub(then.package_idle);
+        sum.interrupt += now.interrupt.saturating_sub(then.interrupt);
+        sum.energy_nj += now.energy_nj.saturating_sub(then.energy_nj);
+        sum.footprint += now.footprint;
+        sum.peak += now.peak;
+    }
+    sum
+}
+
 /// The parent of the process `pid`.
 pub fn parent(pid: libc::pid_t) -> io::Result<libc::pid_t> {
     let info = bsdinfo(pid)?;
@@ -339,6 +421,37 @@ mod tests {
         child.kill().unwrap();
         child.wait().unwrap();
         assert!(!exists(pid));
+    }
+
+    #[test]
+    fn its_usage_grows_with_its_work_and_sums_between_two_reads() {
+        let before = usages(&[own_pid()]);
+        let mut sum = 0_u64;
+        for n in 0..30_000_000_u64 {
+            sum = sum.wrapping_add(std::hint::black_box(n));
+        }
+        std::hint::black_box(sum);
+        let after = usages(&[own_pid()]);
+        let used = used_between(&before, &after);
+        // Some milliseconds of CPU, not hours: the ticks made nanoseconds.
+        assert!(
+            (1_000_000..60_000_000_000).contains(&used.cpu_ns),
+            "{used:?}"
+        );
+        assert!(
+            used.footprint > 0 && used.peak >= used.footprint,
+            "{used:?}"
+        );
+        // A process that started since counts whole; one that ended, none.
+        let other = (
+            1,
+            Usage {
+                cpu_ns: 5,
+                ..Usage::default()
+            },
+        );
+        assert_eq!(used_between(&[], &[other]).cpu_ns, 5);
+        assert_eq!(used_between(&[other], &[]).cpu_ns, 0);
     }
 
     #[test]

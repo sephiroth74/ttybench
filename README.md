@@ -44,3 +44,22 @@ Each round launches the terminal running `ttybench-payload`, waits for its windo
 ## License
 
 MIT, as [LICENSE](LICENSE) says.
+
+### idle
+
+What a terminal uses at rest: the share of a CPU that its processes take, how often they wake up a CPU package or take an interrupt, and the power that macOS bills them. A terminal at rest should take almost none.
+
+```sh
+ttybench idle --terminal ghostty --duration 10 --interval 1
+```
+
+Each round launches the terminal, lets it settle for `--settle` seconds, then reads its processes' counters every `--interval` for `--duration`. `--workload "<workload>"` runs a workload of `ttybench-payload` instead of a rest, such as `"lines --count 100000"`. It needs no `sudo`.
+
+### memory
+
+How much memory a terminal takes: the physical footprint of its processes, as Activity Monitor shows Memory, summed, now and at their peaks.
+
+```sh
+ttybench memory --terminal ghostty --rounds 3
+```
+
