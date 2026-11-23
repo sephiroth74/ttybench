@@ -3,4 +3,8 @@
 //! runs as `ttybench <tool>`, as `git` runs its commands.
 
 pub mod config;
+pub mod keys;
+pub mod process;
+pub mod terminal;
 pub mod tools;
+pub mod windows;
