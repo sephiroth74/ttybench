@@ -1,0 +1,16 @@
+[package]
+name = "ttybench-throughput"
+description = "How fast a terminal prints: MiB/s of a file printed through it, of plain text, dense colors and wide characters."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+libc.workspace = true
+serde_json.workspace = true
+ttybench-core.workspace = true
+
+[lints]
+workspace = true

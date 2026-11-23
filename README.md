@@ -41,10 +41,6 @@ ttybench startup --terminal ghostty --rounds 10 --pause 2
 
 Each round launches the terminal running `ttybench-payload`, waits for its window and for the payload to report that it runs, then quits the terminal. `--season <n>` runs that many rounds first without counting them, as a binary just built starts slower for its first launches. The records go to `--session <folder>`, `ttybench-session` by default.
 
-## License
-
-MIT, as [LICENSE](LICENSE) says.
-
 ### idle
 
 What a terminal uses at rest: the share of a CPU that its processes take, how often they wake up a CPU package or take an interrupt, and the power that macOS bills them. A terminal at rest should take almost none.
@@ -63,3 +59,16 @@ How much memory a terminal takes: the physical footprint of its processes, as Ac
 ttybench memory --terminal ghostty --rounds 3
 ```
 
+### throughput
+
+How fast a terminal prints: the MiB a second of a file that it prints, of plain text, of a color before every character, or of wide characters that take two cells each.
+
+```sh
+ttybench throughput --terminal ghostty --text plain --mib 64 --rounds 5
+```
+
+Each round launches the terminal running `ttybench-payload`, which prints a file of `--mib` MiB as fast as the terminal takes it. Two rates come of each round: to the last byte's write, as the terminal took the bytes, and to the quiet, as its processes' CPU drops below 5 % of a core for 60 ms, once it has drawn what it took. `--text` is `plain`, `colors` or `wide`.
+
+## License
+
+MIT, as [LICENSE](LICENSE) says.
