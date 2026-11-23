@@ -6,6 +6,8 @@ pub mod clock;
 pub mod config;
 pub mod keys;
 pub mod process;
+pub mod results;
+pub mod stats;
 pub mod terminal;
 pub mod tools;
 pub mod windows;
