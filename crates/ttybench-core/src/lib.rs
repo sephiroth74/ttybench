@@ -2,4 +2,5 @@
 //! own, `ttybench-<tool>`, usable alone, which the dispatcher `ttybench`
 //! runs as `ttybench <tool>`, as `git` runs its commands.
 
+pub mod config;
 pub mod tools;

@@ -1,0 +1,41 @@
+# The terminals that ttybench measures, an example: copy it and keep the
+# terminals that you have, each of the config that your session wants.
+#
+# launch: the program and its arguments, of the placeholders `{app}` (the
+# bundle), `{command}` (the script that ttybench runs in the terminal) and
+# `{cwd}` (the folder it starts in); or "open", which opens a `.command`
+# script with the app, for a terminal that takes no command on its command
+# line.
+#
+# env: what its environment gets beside ttybench's, as the folder of a
+# config of the session's, the same font, size and window for every
+# terminal, so that their measures compare.
+
+[terminals.ghostty]
+app = "/Applications/Ghostty.app"
+launch = ["{app}/Contents/MacOS/ghostty", "-e", "{command}"]
+# env = { XDG_CONFIG_HOME = "~/ttybench/config" }
+
+[terminals.alacritty]
+app = "/Applications/Alacritty.app"
+launch = ["{app}/Contents/MacOS/alacritty", "-e", "{command}"]
+
+[terminals.kitty]
+app = "/Applications/kitty.app"
+launch = ["{app}/Contents/MacOS/kitty", "{command}"]
+
+[terminals.wezterm]
+app = "/Applications/WezTerm.app"
+launch = ["{app}/Contents/MacOS/wezterm-gui", "start", "--", "{command}"]
+
+[terminals.iterm2]
+app = "/Applications/iTerm.app"
+launch = "open"
+
+[terminals.terminal]
+app = "/System/Applications/Utilities/Terminal.app"
+launch = "open"
+
+[terminals.lokyr]
+app = "/Applications/Lokyr.app"
+launch = "open"
