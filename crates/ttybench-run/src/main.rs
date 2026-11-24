@@ -6,7 +6,8 @@
 //! records the coordinator gathers; a run that fails is told, and the
 //! session goes on; `--resume` takes up a session that was cut off, of the
 //! runs that did not end well. At its end, `ttybench report` writes the
-//! session's report into its folder, unless `--no-report`.
+//! session's report into its folder, then `ttybench charts` its charts,
+//! unless `--no-report`.
 //!
 //! ```text
 //! ttybench run <session.toml> [--folder <folder>] [--dry-run] [--no-report]
@@ -355,24 +356,35 @@ fn run() -> Result<bool, String> {
 }
 
 /// Writes the report of the session in `folder` of `ttybench-report`,
-/// found in `dirs`; a report that fails is told, the session's end
-/// unchanged.
+/// then its charts of `ttybench-charts`, each found in `dirs`; one that
+/// fails is told, the session's end unchanged.
 fn write_report(folder: &Path, dirs: &[PathBuf]) {
-    let Some(binary) = tools::find("report", dirs) else {
-        eprintln!(
-            "ttybench-run: there is no {}report beside ttybench-run or on the PATH: no report",
-            tools::PREFIX
-        );
-        return;
-    };
-    match Command::new(&binary)
-        .arg(folder)
-        .stdin(Stdio::null())
-        .status()
-    {
-        Ok(status) if status.success() => {}
-        Ok(status) => eprintln!("ttybench-run: the report failed: {status}"),
-        Err(error) => eprintln!("ttybench-run: the report does not start: {error}"),
+    for tool in ["report", "charts"] {
+        let Some(binary) = tools::find(tool, dirs) else {
+            eprintln!(
+                "ttybench-run: there is no {}{tool} beside ttybench-run or on the PATH: no {tool}",
+                tools::PREFIX
+            );
+            return;
+        };
+        match Command::new(&binary)
+            .arg(folder)
+            .stdin(Stdio::null())
+            .status()
+        {
+            Ok(status) if status.success() => {}
+            Ok(status) => {
+                eprintln!("ttybench-run: the {tool} failed: {status}");
+                return;
+            }
+            Err(error) => {
+                eprintln!(
+                    "ttybench-run: {}{tool} does not start: {error}",
+                    tools::PREFIX
+                );
+                return;
+            }
+        }
     }
 }
 

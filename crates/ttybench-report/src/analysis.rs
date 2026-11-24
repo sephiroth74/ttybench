@@ -48,6 +48,9 @@ pub struct Report {
     pub ab: Option<Ab>,
     /// Each metric of each tool and conditions, of its terminals.
     pub groups: Vec<Group>,
+    /// The session's budgets, as its file writes them, which the
+    /// judgements name by their place.
+    pub budgets: Vec<Budget>,
     /// The budgets judged.
     pub judgements: Vec<Judgement>,
     /// The runs that measured nothing: failed, or skipped of no group to
@@ -254,6 +257,7 @@ pub fn report(input: &Input<'_>) -> Report {
         terminals,
         ab: input.ab.clone(),
         groups,
+        budgets: input.budgets.to_vec(),
         judgements,
         unmeasured,
     }

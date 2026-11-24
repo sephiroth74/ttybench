@@ -1,0 +1,19 @@
+[package]
+name = "ttybench-charts"
+description = "A session's charts: SVG of each metric's terminals, the latency's distribution, the frames in time, the GPU and the A/B."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ttybench-core.workspace = true
+
+[dev-dependencies]
+quick-xml.workspace = true
+
+[lints]
+workspace = true

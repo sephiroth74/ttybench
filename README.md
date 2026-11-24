@@ -83,7 +83,7 @@ ttybench run session.toml
 - **`feature`** on a run measures the terminals that have that feature, of it on, and skips the others, without launching them: `--dry-run` tells them, and the session's log keeps them as skipped. A run of no `feature` measures each terminal's base.
 - **`season`** launches each terminal that many times before the first run, not counted, as a terminal just built or installed starts slower for its first launches.
 - **`sudo = true`** on a run that needs `sudo`: the session asks for it once and keeps it.
-- **The report**: at its end, the session writes its report into its folder, as the next section tells, unless `--no-report`.
+- **The report and the charts**: at its end, the session writes its report and its charts into its folder, as the next sections tell, unless `--no-report`.
 
 ## Read a session's report
 
@@ -135,6 +135,23 @@ change-at-least = "-5%"      # B's median at most 5 % below A's
 - **`metric`** names the metric, as the tables' small line shows it; `tool` and `conditions` narrow the records that it judges, each condition of the value that the records' has; `terminal` narrows the terminals.
 - **`at-most` and `at-least`** limit each terminal's statistic. **`change-at-most` and `change-at-least`** limit its change from the A/B's A to its B, in the metric's unit, or in percent of A's, as `"5%"`: they need an `ab`.
 - `ttybench run` checks the budgets as it starts, so that a typo doesn't wait for the session's end.
+
+## See a session's charts
+
+`ttybench charts` draws a session's charts as SVG files, from its `report.json` and its records, into its folder's `charts/`, which the coordinator writes after the report; run it alone after `ttybench report`:
+
+```sh
+ttybench charts sessions/2026-11-24-1405
+ttybench charts sessions/2026-11-24-1405 --out ~/Desktop/charts
+```
+
+- **Bars** of each terminal's median of each metric, and a ring of its 95th percentile, with a tick of each budget that judges it.
+- **The latency's distribution**: the share of the keys echoed within each time, every key, then the slowest tenth, where the tails differ.
+- **The gaps between frames in time**, of the scroll's and the frames' tools, a panel of each terminal on one scale, with a line of a refresh's length.
+- **The GPU's time** of each terminal, its own then WindowServer's, stacked.
+- **The A/B**: each metric's change of the median in percent of A's, its 95 % interval, better, worse or within the noise, and the budgets of the change.
+
+Each terminal keeps its color in every chart, by its place in the session. The charts follow the light or dark appearance of the page or system that shows them, or a page's `light` or `dark` class on the chart. Each chart has a title and a description for screen readers, and tells its values in a tooltip as the pointer rests on a mark. `charts/charts.json` lists the charts, their titles and the report's groups that each shows.
 
 ## The tools
 

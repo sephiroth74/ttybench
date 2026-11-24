@@ -33,9 +33,10 @@ printf '{"tool":"%s","terminal":"%s","metric":"rounds","unit":"n","samples":[%s]
 echo "probed $terminal"
 "#;
 
-/// A report of a script's, where the real one is not built beside the
-/// coordinator.
+/// A report and charts of a script's, where the real ones are not built
+/// beside the coordinator.
 const REPORT: &str = "#!/bin/sh\necho reported > \"$1/report.md\"\n";
+const CHARTS: &str = "#!/bin/sh\nmkdir -p \"$1/charts\" && echo '[]' > \"$1/charts/charts.json\"\n";
 
 const TERMINALS: &str = r#"
 [terminals.a]
@@ -73,9 +74,11 @@ fn place(name: &str) -> PathBuf {
         std::fs::write(&path, PROBE).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let report = dir.join("bin").join("ttybench-report");
-    std::fs::write(&report, REPORT).unwrap();
-    std::fs::set_permissions(&report, std::fs::Permissions::from_mode(0o755)).unwrap();
+    for (tool, script) in [("report", REPORT), ("charts", CHARTS)] {
+        let path = dir.join("bin").join(format!("ttybench-{tool}"));
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     std::fs::write(dir.join("terminals.toml"), TERMINALS).unwrap();
     std::fs::write(dir.join("session.toml"), SESSION).unwrap();
     dir
@@ -168,6 +171,7 @@ fn a_session_in_balanced_orders_cut_off_and_taken_up() {
         "machine.json",
         "runs/c1-r1-probe-a/output.txt",
         "report.md",
+        "charts/charts.json",
     ] {
         assert!(out.join(kept).exists(), "{kept}");
     }
