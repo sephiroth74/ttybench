@@ -18,3 +18,4 @@ pub mod stats;
 pub mod terminal;
 pub mod tools;
 pub mod windows;
+pub mod xctrace;

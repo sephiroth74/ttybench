@@ -426,9 +426,19 @@ dependencies = [
  "objc2-foundation",
  "objc2-screen-capture-kit",
  "plist",
+ "quick-xml",
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "ttybench-frames"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde_json",
+ "ttybench-core",
 ]
 
 [[package]]

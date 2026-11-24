@@ -218,6 +218,31 @@ Two terminals at 60 Hz, 10 seconds each, a display of nothing else moving:
 | kitty 0.51.0 | rest | 0.00 ms/s | 1.04 ms/s | 1.0 mW | 0.6 % |
 | kitty 0.51.0 | scroll | 56.2 ms/s | 48.6 ms/s | 41.1 mW | 10.0 % |
 
+### frames
+
+Each frame of a terminal on the GPU, while it scrolls or rests: its GPU time, the frames a second, the gaps between them, and how the display showed them.
+
+```sh
+ttybench frames --terminal ghostty --workload scroll --seconds 10
+ttybench frames --terminal lokyr --feature smooth-scroll
+```
+
+Each round launches the terminal running `ttybench-payload`, records Instruments' Metal System Trace of it with `xctrace`, Xcode's, over `--seconds` of the same scroll as `ttybench scroll`'s, or of rest, then reads the trace and removes it.
+
+- **A frame's GPU time** is the time that the GPU worked on it, of its vertex and fragment work, which may overlap, in milliseconds.
+- **The frames a second** are those that the terminal drew on the GPU. A terminal may draw a frame at every refresh while it scrolls, though its rows change less often: `ttybench scroll` counts the frames that show the text moved.
+- **The share of the refreshes of a new frame** and **the frames dropped** come of the display's own record of what it showed at each refresh: a frame drawn but never shown counts dropped. The share of the refreshes counts against the display's rate where it tells one, else against the time that a surface stays on screen.
+- **The trace** takes some tens of megabytes a second: ttybench asks for 2 GiB free first, and removes it once read, whatever comes. `--keep` keeps it for Instruments to open.
+
+Two terminals at 60 Hz, 10 seconds of a trackpad's scroll each, of the same feature:
+
+| Terminal | Scroll | Frames a second | A frame's GPU time, median and 95th percentile | Refreshes of a new frame | Frames dropped |
+|---|---|---|---|---|---|
+| Lokyr 1.4.0 | smooth | 59.5 | 0.146 · 0.158 ms | 98.8 % | 0 |
+| Ghostty 1.4.0 | smooth | skipped: no smooth scrolling | | | |
+| Lokyr 1.4.0 | by rows | 9.7 | 0.143 · 0.146 ms | 16.0 % | 0 |
+| Ghostty 1.4.0 | by rows | 58.8 | 0.175 · 0.180 ms | 97.4 % | 1 |
+
 ## License
 
 MIT, as [LICENSE](LICENSE) says.
