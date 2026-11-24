@@ -165,7 +165,7 @@ pub fn used_between(before: &[(libc::pid_t, Usage)], after: &[(libc::pid_t, Usag
 /// The parent of the process `pid`.
 pub fn parent(pid: libc::pid_t) -> io::Result<libc::pid_t> {
     let info = bsdinfo(pid)?;
-    libc::pid_t::try_from(info.pbi_ppid).map_err(io::Error::other)
+    libc::pid_t::try_from(info.pbsi_ppid).map_err(io::Error::other)
 }
 
 /// The process `root` and every process under it, its children's children
@@ -194,17 +194,20 @@ pub fn exists(pid: libc::pid_t) -> bool {
     signal(pid, 0).is_ok() || io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
-/// The kernel's BSD record of the process `pid`.
-fn bsdinfo(pid: libc::pid_t) -> io::Result<libc::proc_bsdinfo> {
-    let mut info = MaybeUninit::<libc::proc_bsdinfo>::zeroed();
-    let size = c_int::try_from(mem::size_of::<libc::proc_bsdinfo>()).expect("the struct is small");
-    // SAFETY: `info` is writable and sized for `proc_bsdinfo`, the struct
-    // that `PROC_PIDTBSDINFO` asks the kernel to fill in; `zeroed` made
-    // every field valid, whether the call succeeds or not.
+/// The kernel's short BSD record of the process `pid`, which it gives of
+/// every user's processes, as `/usr/bin/login`'s, root's, between a
+/// terminal and its shell, when the full record is refused.
+fn bsdinfo(pid: libc::pid_t) -> io::Result<libc::proc_bsdshortinfo> {
+    let mut info = MaybeUninit::<libc::proc_bsdshortinfo>::zeroed();
+    let size =
+        c_int::try_from(mem::size_of::<libc::proc_bsdshortinfo>()).expect("the struct is small");
+    // SAFETY: `info` is writable and sized for `proc_bsdshortinfo`, the
+    // struct that `PROC_PIDT_SHORTBSDINFO` asks the kernel to fill in;
+    // `zeroed` made every field valid, whether the call succeeds or not.
     let (written, info) = unsafe {
         let written = libc::proc_pidinfo(
             pid,
-            libc::PROC_PIDTBSDINFO,
+            libc::PROC_PIDT_SHORTBSDINFO,
             0,
             info.as_mut_ptr().cast(),
             size,
@@ -398,6 +401,12 @@ mod tests {
         child.kill().unwrap();
         child.wait().unwrap();
         assert!(!exists(pid));
+    }
+
+    #[test]
+    fn a_process_of_root_tells_its_parent() {
+        // launchd, root's, whose full record the kernel refuses to others.
+        assert_eq!(parent(1).unwrap(), 0);
     }
 
     #[test]
