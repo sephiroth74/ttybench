@@ -80,8 +80,38 @@ pub fn terminals_file(args: &Args) -> PathBuf {
     PathBuf::from(config::expand_home("~/.config/ttybench/terminals.toml"))
 }
 
-/// The terminal that `--terminal` names, of its file; why none otherwise.
+/// The exit status of a tool that measured nothing as the terminal has
+/// not the feature that `--feature` names, which a session tells skipped.
+pub const SKIPPED: u8 = 3;
+
+/// The feature that `--feature` names, if one.
+pub fn feature(args: &Args) -> Option<&str> {
+    args.value("feature")
+}
+
+/// The terminal that `--terminal` names, of its file, of the feature that
+/// `--feature` names on, if one; why none otherwise. A terminal that has
+/// not the feature measures nothing alike: the tool tells it skipped and
+/// ends of [`SKIPPED`].
 pub fn terminal(args: &Args) -> Result<(String, Terminal), String> {
+    let (name, terminal) = base_terminal(args)?;
+    let Some(feature) = feature(args) else {
+        return Ok((name, terminal));
+    };
+    match terminal.with_feature(feature)? {
+        Some(terminal) => Ok((name, terminal)),
+        None => {
+            eprintln!(
+                "{name} has no feature `{feature}` in the terminals' file: skipped, as a measure \
+                 of it would measure another thing"
+            );
+            std::process::exit(i32::from(SKIPPED));
+        }
+    }
+}
+
+/// The terminal that `--terminal` names, of its file, as its base.
+fn base_terminal(args: &Args) -> Result<(String, Terminal), String> {
     let path = terminals_file(args);
     let terminals: Terminals = config::read(&path).map_err(|error| error.to_string())?;
     let name = args

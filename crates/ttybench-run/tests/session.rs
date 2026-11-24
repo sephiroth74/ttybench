@@ -1,13 +1,15 @@
 //! A session of two terminals and two tools, of a probe of a script's in
 //! place of the tools, which opens no window: its orders, its records,
-//! a run that fails, and the session taken up.
+//! a run that fails, a run skipped, and the session taken up.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 /// A tool that writes a record of its terminal and its rounds into its
-/// session, or fails for the terminal that `TTYBENCH_PROBE_FAILS` names.
+/// session, or fails for the terminal that `TTYBENCH_PROBE_FAILS` names,
+/// or skips the one that `TTYBENCH_PROBE_SKIPS` names, as of a feature
+/// that it has not.
 const PROBE: &str = r#"#!/bin/sh
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -19,6 +21,10 @@ while [ $# -gt 0 ]; do
 done
 if [ "$terminal" = "$TTYBENCH_PROBE_FAILS" ]; then
   echo "no luck for $terminal" >&2
+  exit 4
+fi
+if [ "$terminal" = "$TTYBENCH_PROBE_SKIPS" ]; then
+  echo "$terminal has no feature: skipped" >&2
   exit 3
 fi
 mkdir -p "$session"
@@ -69,6 +75,10 @@ fn place(name: &str) -> PathBuf {
 }
 
 fn coordinator(dir: &Path, args: &[&str], fails: Option<&str>) -> Output {
+    coordinator_with(dir, args, fails, None)
+}
+
+fn coordinator_with(dir: &Path, args: &[&str], fails: Option<&str>, skips: Option<&str>) -> Output {
     let path = format!(
         "{}:{}",
         dir.join("bin").display(),
@@ -79,6 +89,10 @@ fn coordinator(dir: &Path, args: &[&str], fails: Option<&str>) -> Output {
     match fails {
         Some(terminal) => command.env("TTYBENCH_PROBE_FAILS", terminal),
         None => command.env_remove("TTYBENCH_PROBE_FAILS"),
+    };
+    match skips {
+        Some(terminal) => command.env("TTYBENCH_PROBE_SKIPS", terminal),
+        None => command.env_remove("TTYBENCH_PROBE_SKIPS"),
     };
     command.output().unwrap()
 }
@@ -132,7 +146,7 @@ fn a_session_in_balanced_orders_cut_off_and_taken_up() {
         log[1]["error"]
             .as_str()
             .unwrap()
-            .contains("exited of 3:\nno luck for b")
+            .contains("exited of 4:\nno luck for b")
     );
     let records = lines(&out.join("records.jsonl"));
     assert_eq!(records.len(), 4);
@@ -196,4 +210,82 @@ fn a_dry_run_tells_the_steps_and_writes_nothing() {
     let unknown = coordinator(&dir, &["--resume", "nowhere"], None);
     assert_eq!(unknown.status.code(), Some(2));
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_run_of_a_feature_that_its_terminal_has_not_is_skipped_and_stays_so() {
+    let dir = place("skipped");
+    let out = dir.join("out");
+    let first = coordinator_with(&dir, &["session.toml"], None, Some("b"));
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let log = lines(&out.join("runs.jsonl"));
+    let skipped: Vec<&str> = log
+        .iter()
+        .filter(|entry| entry["status"] == "skipped")
+        .map(|entry| entry["terminal"].as_str().unwrap())
+        .collect();
+    assert_eq!(skipped, ["b"; 4]);
+    assert!(
+        log.iter()
+            .filter(|entry| entry["status"] == "skipped")
+            .all(|entry| entry["error"] == "b has no feature: skipped")
+    );
+    assert!(String::from_utf8_lossy(&first.stdout).contains("0 failed, 4 skipped"));
+    assert_eq!(lines(&out.join("records.jsonl")).len(), 4);
+    // Taken up, it has nothing more to run.
+    let again = coordinator_with(&dir, &["--resume", "out"], None, None);
+    assert_eq!(again.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&again.stdout).contains("every run"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_terminal_of_no_feature_of_a_run_is_skipped_of_no_launch() {
+    let dir = place("feature");
+    std::fs::write(
+        dir.join("terminals.toml"),
+        format!("{TERMINALS}features.smooth = {{ env = {{ SMOOTH = \"1\" }} }}\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("session.toml"),
+        "terminals = [\"a\", \"b\"]\nterminals-file = \"terminals.toml\"\nfolder = \"out\"\npause = 0\n\n[[run]]\ntool = \"probe\"\nfeature = \"smooth\"\n",
+    )
+    .unwrap();
+    let dry = coordinator(&dir, &["session.toml", "--dry-run"], None);
+    let listed = String::from_utf8_lossy(&dry.stdout).into_owned();
+    assert!(
+        listed.contains("probe of b, 2 of its order: ttybench probe --feature smooth\n"),
+        "{listed}"
+    );
+    assert!(
+        listed.contains("probe of a, 1 of its order: ttybench probe --feature smooth (skipped: no feature `smooth`)"),
+        "{listed}"
+    );
+    let run = coordinator(&dir, &["session.toml"], None);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let log = lines(&dir.join("out/runs.jsonl"));
+    let statuses: Vec<(&str, &str)> = log
+        .iter()
+        .map(|entry| {
+            (
+                entry["terminal"].as_str().unwrap(),
+                entry["status"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    // The terminal b, of the terminals' file's last, has the feature: a not.
+    assert_eq!(statuses, [("a", "skipped"), ("b", "done")]);
+    assert!(!dir.join("out/runs/c1-r1-probe-a").exists());
+    let _ = std::fs::remove_dir_all(&dir);
 }

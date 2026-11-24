@@ -72,6 +72,10 @@ pub struct Run {
     /// keeps.
     #[serde(default)]
     pub sudo: bool,
+    /// The feature that it measures, as `smooth-scroll`, of the terminals
+    /// that have it, on; the others skipped; of none, each terminal's base.
+    #[serde(default)]
+    pub feature: Option<String>,
 }
 
 /// A tool's run for a terminal, in a cycle.
@@ -95,6 +99,8 @@ pub struct Step {
     pub args: Vec<String>,
     /// Whether it needs `sudo`.
     pub sudo: bool,
+    /// The feature that it measures, if one.
+    pub feature: Option<String>,
 }
 
 fn default_pause() -> f64 {
@@ -186,6 +192,11 @@ impl Session {
                     {
                         args.extend(["--rounds".to_owned(), rounds.to_string()]);
                     }
+                    if let Some(feature) = &run.feature
+                        && !args.iter().any(|arg| arg == "--feature")
+                    {
+                        args.extend(["--feature".to_owned(), feature.clone()]);
+                    }
                     steps.push(Step {
                         id: format!(
                             "c{cycle}-r{}-{}-{}",
@@ -200,6 +211,7 @@ impl Session {
                         terminal: terminal.clone(),
                         args,
                         sudo: run.sudo,
+                        feature: run.feature.clone(),
                     });
                 }
             }
@@ -304,6 +316,18 @@ mod tests {
             }
         }
         orders
+    }
+
+    #[test]
+    fn a_runs_feature_goes_to_its_tool() {
+        let session = session(
+            "terminals = [\"a\", \"b\"]\n[[run]]\ntool = \"scroll\"\nfeature = \"smooth-scroll\"\n[[run]]\ntool = \"scroll\"\n",
+        );
+        let steps = session.steps();
+        assert_eq!(steps[0].feature.as_deref(), Some("smooth-scroll"));
+        assert_eq!(steps[0].args, ["--feature", "smooth-scroll"]);
+        assert_eq!(steps[2].feature, None);
+        assert!(steps[2].args.is_empty());
     }
 
     #[test]

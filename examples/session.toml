@@ -45,6 +45,13 @@ tool = "scroll"
 args = ["--by", "pixels", "--seconds", "10"]
 rounds = 2
 
+# The same scroll of smooth scrolling on, of the terminals that have it.
+[[run]]
+tool = "scroll"
+args = ["--by", "pixels", "--seconds", "10"]
+rounds = 2
+feature = "smooth-scroll"
+
 [[run]]
 tool = "gpu"
 args = ["--workload", "scroll", "--seconds", "10", "--system"]

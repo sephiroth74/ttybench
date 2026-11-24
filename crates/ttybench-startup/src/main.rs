@@ -4,7 +4,7 @@
 //! payload's `ready`, once the terminal ran it; then quits it, and pauses.
 //!
 //! ```text
-//! ttybench-startup --terminal <name> [--terminals <file>] [--rounds <n>]
+//! ttybench-startup --terminal <name> [--terminals <file>] [--feature <name>] [--rounds <n>]
 //!                  [--pause <seconds>] [--season <n>] [--session <folder>]
 //! ```
 
@@ -51,6 +51,7 @@ fn run() -> Result<(), String> {
         &[
             "terminal",
             "terminals",
+            "feature",
             "rounds",
             "pause",
             "season",
@@ -88,6 +89,9 @@ fn run() -> Result<(), String> {
     let version = results::app_version(&terminal.app);
     let grid = measured.last().map_or((0, 0), |round| round.grid);
     let mut conditions = serde_json::Map::new();
+    if let Some(feature) = cli::feature(&args) {
+        conditions.insert("feature".into(), feature.into());
+    }
     conditions.insert("rounds".into(), rounds.into());
     conditions.insert("season".into(), season.into());
     conditions.insert("pause_s".into(), pause.as_secs_f64().into());

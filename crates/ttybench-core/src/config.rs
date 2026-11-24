@@ -52,9 +52,28 @@ pub struct Terminal {
     /// beside a pane's work, if it has them.
     #[serde(default)]
     pub beside: Option<Beside>,
+    /// The features that it has, by their names, as `smooth-scroll`, and
+    /// how each turns on: of its base config, each off.
+    #[serde(default)]
+    pub features: BTreeMap<String, Feature>,
     /// How it quits once measured.
     #[serde(default)]
     pub quit: Quit,
+}
+
+/// How a feature of a terminal turns on: the variables that its
+/// environment gets in place of its base's, as the folder of a config of
+/// the feature on, and the arguments that its program gets after its own
+/// name, of a launch of arguments.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Feature {
+    /// The variables, each of `~` expanded.
+    #[serde(default, deserialize_with = "environment")]
+    pub env: BTreeMap<String, String>,
+    /// The arguments, as `["-o", "key=value"]`.
+    #[serde(default)]
+    pub args: Vec<String>,
 }
 
 /// A pane beside the measured one: the keys that open it, in a split or a
@@ -275,6 +294,35 @@ fn check_argv(argv: &[String]) -> Result<(), String> {
 }
 
 impl Terminal {
+    /// It of its feature `name` on: its environment of the feature's
+    /// variables in place of its base's, and the feature's arguments after
+    /// its program's name; none of a feature that it has not, as a measure
+    /// of it then measures nothing alike; why not of arguments to a launch
+    /// by `open`.
+    pub fn with_feature(&self, name: &str) -> Result<Option<Terminal>, String> {
+        let Some(feature) = self.features.get(name) else {
+            return Ok(None);
+        };
+        let mut terminal = self.clone();
+        terminal.env.extend(
+            feature
+                .env
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+        if !feature.args.is_empty() {
+            let Launch::Argv(argv) = &mut terminal.launch else {
+                return Err(format!(
+                    "the feature `{name}` gives arguments to a terminal launched by `open`, which \
+                     takes none: give it variables of a config instead"
+                ));
+            };
+            let at = 1.min(argv.len());
+            argv.splice(at..at, feature.args.iter().cloned());
+        }
+        Ok(Some(terminal))
+    }
+
     /// The launch's program and arguments of `command`, the script that it
     /// runs, and `cwd`, the folder it starts in; none of a launch by
     /// `open`.
@@ -504,6 +552,24 @@ mod tests {
             assert!(error.to_string().contains(says), "{error}");
             assert!(error.at.is_some(), "{error}");
         }
+    }
+
+    #[test]
+    fn a_feature_turns_on_of_its_variables_and_its_arguments() {
+        let read = terminals(
+            "[terminals.x]\napp = \"/X.app\"\nlaunch = [\"{app}/x\", \"-e\", \"{command}\"]\nenv = { CONF = \"/base\", KEEP = \"1\" }\nfeatures.smooth-scroll = { env = { CONF = \"/smooth\" }, args = [\"-o\", \"pixels=yes\"] }\n[terminals.y]\napp = \"/Y.app\"\nlaunch = \"open\"\nfeatures.smooth-scroll = { args = [\"--smooth\"] }\n",
+        )
+        .unwrap();
+        let x = &read.terminals["x"];
+        let smooth = x.with_feature("smooth-scroll").unwrap().unwrap();
+        assert_eq!(smooth.env["CONF"], "/smooth");
+        assert_eq!(smooth.env["KEEP"], "1");
+        assert_eq!(
+            smooth.argv(Path::new("/r"), Path::new("/w")).unwrap(),
+            ["/X.app/x", "-o", "pixels=yes", "-e", "/r"]
+        );
+        assert_eq!(x.with_feature("ligatures").unwrap(), None);
+        assert!(read.terminals["y"].with_feature("smooth-scroll").is_err());
     }
 
     #[test]

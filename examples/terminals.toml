@@ -16,6 +16,14 @@
 # keys that give the keyboard back to the measured pane (back), or where
 # to click in it (click), as shares of the window's width and height from
 # its top left. A key's character is the US layout's.
+#
+# features: what a terminal can do that another may not, as smooth
+# scrolling, and how it turns on: the variables that its environment gets
+# in place of its base's, as the folder of a config of the feature on, or
+# the arguments that its program gets after its name. Give each terminal
+# a base config of every feature off. A tool's `--feature <name>` measures
+# the terminals that have it, of it on, and skips the others, so that each
+# measure compares the same thing.
 
 [terminals.ghostty]
 app = "/Applications/Ghostty.app"
@@ -50,3 +58,5 @@ launch = "open"
 app = "/Applications/Lokyr.app"
 launch = "open"
 beside = { open = ["cmd+d"], back = ["cmd+["] }
+# env = { XDG_CONFIG_HOME = "~/ttybench/lokyr" }                # [window] smooth-scroll = false
+# features.smooth-scroll = { env = { XDG_CONFIG_HOME = "~/ttybench/lokyr-smooth" } }  # = true

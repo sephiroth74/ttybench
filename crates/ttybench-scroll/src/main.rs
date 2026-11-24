@@ -6,7 +6,7 @@
 //! took of the text moved: the frames a second, and the gaps between them.
 //!
 //! ```text
-//! ttybench-scroll --terminal <name> [--terminals <file>] [--by pixels|lines]
+//! ttybench-scroll --terminal <name> [--terminals <file>] [--feature <name>] [--by pixels|lines]
 //!                 [--seconds <n>] [--rate <n>] [--amplitude <points>]
 //!                 [--source window|screen] [--presence on|off]
 //!                 [--rounds <n>] [--pause <seconds>] [--session <folder>]
@@ -86,6 +86,7 @@ fn run() -> Result<(), String> {
         &[
             "terminal",
             "terminals",
+            "feature",
             "by",
             "seconds",
             "rate",
@@ -156,6 +157,9 @@ fn run() -> Result<(), String> {
     }
     let version = results::app_version(&terminal.app);
     let mut conditions = serde_json::Map::new();
+    if let Some(feature) = cli::feature(&args) {
+        conditions.insert("feature".into(), feature.into());
+    }
     conditions.insert("rounds".into(), rounds.into());
     conditions.insert("by".into(), settings.pattern.by.name().into());
     conditions.insert("seconds".into(), settings.pattern.seconds.into());

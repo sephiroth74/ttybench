@@ -8,7 +8,7 @@
 //! line changed, the key's latency.
 //!
 //! ```text
-//! ttybench-latency --terminal <name> [--terminals <file>] [--keys <n>]
+//! ttybench-latency --terminal <name> [--terminals <file>] [--feature <name>] [--keys <n>]
 //!                  [--spacing <ms>] [--sync] [--flood] [--to process|system]
 //!                  [--rounds <n>] [--pause <seconds>] [--session <folder>]
 //! ```
@@ -130,6 +130,7 @@ fn run() -> Result<(), String> {
         &[
             "terminal",
             "terminals",
+            "feature",
             "keys",
             "spacing",
             "to",
@@ -199,6 +200,9 @@ fn run() -> Result<(), String> {
     let version = results::app_version(&terminal.app);
     let grid = measured.last().map_or((0, 0), |round| round.grid);
     let mut conditions = serde_json::Map::new();
+    if let Some(feature) = cli::feature(&args) {
+        conditions.insert("feature".into(), feature.into());
+    }
     conditions.insert("rounds".into(), rounds.into());
     conditions.insert("keys".into(), settings.keys.into());
     conditions.insert(

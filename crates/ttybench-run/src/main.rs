@@ -190,10 +190,20 @@ fn run() -> Result<bool, String> {
     }
     let steps = session.steps();
     let folder = &opened.folder;
+    let lacks = |step: &Step| -> Option<String> {
+        step.feature.clone().filter(|feature| {
+            !opened.terminals.terminals[&step.terminal]
+                .features
+                .contains_key(feature)
+        })
+    };
     if options.flag("dry-run") {
         for (at, step) in steps.iter().enumerate() {
+            let skipped = lacks(step).map_or(String::new(), |feature| {
+                format!(" (skipped: no feature `{feature}`)")
+            });
             println!(
-                "{:>4}. cycle {}, {} of {}, {} of its order: ttybench {} {}",
+                "{:>4}. cycle {}, {} of {}, {} of its order: ttybench {} {}{skipped}",
                 at + 1,
                 step.cycle,
                 step.tool,
@@ -270,7 +280,7 @@ fn run() -> Result<bool, String> {
     let terminals_file = folder.join(TERMINALS);
     let pause = Duration::from_secs_f64(session.pause);
     let timeout = Duration::from_secs_f64(session.timeout);
-    let mut failed = 0;
+    let (mut failed, mut skipped) = (0, 0);
     for (at, step) in pending.iter().enumerate() {
         eprintln!(
             "\nttybench-run: [{}/{}] cycle {}/{}: {} of {}, {} of its order",
@@ -282,14 +292,29 @@ fn run() -> Result<bool, String> {
             step.terminal,
             step.position
         );
-        thread::sleep(pause);
-        let entry = execute(
-            step,
-            &binaries[&step.tool],
-            folder,
-            &terminals_file,
-            timeout,
-        );
+        let entry = match lacks(step) {
+            // A terminal that has not the run's feature measures nothing
+            // alike: skipped, of no launch.
+            Some(feature) => skip(step, &feature),
+            None => {
+                thread::sleep(pause);
+                execute(
+                    step,
+                    &binaries[&step.tool],
+                    folder,
+                    &terminals_file,
+                    timeout,
+                )
+            }
+        };
+        if entry.status == Status::Skipped {
+            skipped += 1;
+            eprintln!(
+                "ttybench-run: {} skipped: {}",
+                step.id,
+                entry.error.as_deref().unwrap_or("")
+            );
+        }
         if entry.status == Status::Failed {
             failed += 1;
             eprintln!(
@@ -308,7 +333,7 @@ fn run() -> Result<bool, String> {
     }
     let count = log::gather(folder).map_err(|error| format!("the session's records: {error}"))?;
     println!(
-        "{} runs, {failed} failed; {count} records in {}",
+        "{} runs, {failed} failed, {skipped} skipped; {count} records in {}",
         pending.len(),
         folder.join(RECORDS).display()
     );
@@ -319,6 +344,30 @@ fn run() -> Result<bool, String> {
         );
     }
     Ok(failed == 0)
+}
+
+/// The entry of `step` skipped, as its terminal has not its run's feature
+/// `feature`.
+fn skip(step: &Step, feature: &str) -> Entry {
+    Entry {
+        id: step.id.clone(),
+        cycle: step.cycle,
+        run: step.run,
+        position: step.position,
+        tool: step.tool.clone(),
+        terminal: step.terminal.clone(),
+        args: step.args.clone(),
+        started: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs()),
+        seconds: 0.0,
+        status: Status::Skipped,
+        code: None,
+        error: Some(format!(
+            "{} has no feature `{feature}` in the terminals' file",
+            step.terminal
+        )),
+    }
 }
 
 /// Runs `step`'s tool of `binary` in its folder of the session in
@@ -351,6 +400,13 @@ fn execute(
         .and_then(|()| watch(binary, &args, &place.join(OUTPUT), timeout));
     let (status, code, error) = match watched {
         Ok(Watched { code: Some(0), .. }) => (Status::Done, Some(0), None),
+        Ok(Watched {
+            code: Some(code),
+            tail,
+            ..
+        }) if code == i32::from(ttybench_core::cli::SKIPPED) => {
+            (Status::Skipped, Some(code), tail.into_iter().last())
+        }
         Ok(Watched {
             code,
             tail,

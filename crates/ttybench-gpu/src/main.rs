@@ -8,7 +8,7 @@
 //! `powermetrics`.
 //!
 //! ```text
-//! ttybench-gpu --terminal <name> [--terminals <file>] [--workload rest|scroll]
+//! ttybench-gpu --terminal <name> [--terminals <file>] [--feature <name>] [--workload rest|scroll]
 //!              [--seconds <n>] [--by pixels|lines] [--system]
 //!              [--interval <ms>] [--presence on|off] [--rounds <n>]
 //!              [--pause <seconds>] [--session <folder>]
@@ -90,6 +90,7 @@ fn run() -> Result<(), String> {
         &[
             "terminal",
             "terminals",
+            "feature",
             "workload",
             "seconds",
             "by",
@@ -166,6 +167,9 @@ fn run() -> Result<(), String> {
     }
     let version = results::app_version(&terminal.app);
     let mut conditions = serde_json::Map::new();
+    if let Some(feature) = cli::feature(&args) {
+        conditions.insert("feature".into(), feature.into());
+    }
     conditions.insert("rounds".into(), rounds.into());
     conditions.insert("seconds".into(), settings.seconds.into());
     match settings.workload {

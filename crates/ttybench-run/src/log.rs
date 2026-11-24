@@ -55,6 +55,9 @@ pub enum Status {
     Done,
     /// Its tool exited of another code, did not start, or took too long.
     Failed,
+    /// Its tool measured nothing, as the terminal has not the feature that
+    /// the run names, which would measure another thing.
+    Skipped,
 }
 
 /// The entries of the log of the session in `folder`, in their order;
@@ -90,11 +93,12 @@ pub fn append(folder: &Path, entry: &Entry) -> io::Result<()> {
     file.sync_data()
 }
 
-/// The ids of `entries` whose last entry is done.
+/// The ids of `entries` whose last entry ended: done, or skipped, as a
+/// run of a feature that its terminal has not stays so.
 pub fn done(entries: &[Entry]) -> BTreeSet<String> {
     last_of_each(entries)
         .into_iter()
-        .filter(|entry| entry.status == Status::Done)
+        .filter(|entry| entry.status != Status::Failed)
         .map(|entry| entry.id.clone())
         .collect()
 }
@@ -191,9 +195,13 @@ mod tests {
         append(&folder, &entry("one", 1, Status::Done)).unwrap();
         append(&folder, &entry("three", 2, Status::Failed)).unwrap();
         append(&folder, &entry("two", 1, Status::Done)).unwrap();
+        append(&folder, &entry("four", 2, Status::Skipped)).unwrap();
         let entries = read(&folder).unwrap();
-        assert_eq!(entries.len(), 4);
-        assert_eq!(done(&entries), ["one", "two"].map(String::from).into());
+        assert_eq!(entries.len(), 5);
+        assert_eq!(
+            done(&entries),
+            ["four", "one", "two"].map(String::from).into()
+        );
         for _ in 0..2 {
             assert_eq!(gather(&folder).unwrap(), 2);
         }

@@ -6,7 +6,7 @@
 //! them. A terminal at rest should take none of them.
 //!
 //! ```text
-//! ttybench-idle --terminal <name> [--terminals <file>] [--rounds <n>]
+//! ttybench-idle --terminal <name> [--terminals <file>] [--feature <name>] [--rounds <n>]
 //!               [--duration <seconds>] [--interval <seconds>]
 //!               [--settle <seconds>] [--pause <seconds>]
 //!               [--workload "<payload's workload>"] [--session <folder>]
@@ -50,6 +50,7 @@ fn run() -> Result<(), String> {
         &[
             "terminal",
             "terminals",
+            "feature",
             "rounds",
             "duration",
             "interval",
@@ -116,6 +117,9 @@ fn run() -> Result<(), String> {
     }
     let version = results::app_version(&terminal.app);
     let mut conditions = serde_json::Map::new();
+    if let Some(feature) = cli::feature(&args) {
+        conditions.insert("feature".into(), feature.into());
+    }
     conditions.insert("rounds".into(), rounds.into());
     conditions.insert("duration_s".into(), duration.into());
     conditions.insert("interval_s".into(), interval.into());

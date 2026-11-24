@@ -29,6 +29,31 @@ launch = "open"
 
 The tools read `--terminals <file>`, else `$TTYBENCH_TERMINALS`, else `terminals.toml` in the current folder, else `~/.config/ttybench/terminals.toml`.
 
+### Measure the same thing of every terminal
+
+A measure compares terminals only when each runs of the same conditions: give every terminal a base config alike, of the same font, font size and window size, a cursor that doesn't blink, no ligatures, an opaque window, no plugins or extensions of its own, and every feature that another terminal may lack turned off. ttybench can't read two terminals' configs and tell them alike: that is yours to do, in the configs that your terminals' file points them at. Each record keeps the feature that it measured, if one, so that reports compare records of the same conditions alone.
+
+### Features
+
+Some measures compare a feature that not every terminal has, such as smooth scrolling. Describe each terminal's features and how each turns on, and give it a base config of every feature off:
+
+```toml
+[terminals.lokyr]
+app = "/Applications/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "~/ttybench/lokyr" }                       # smooth scrolling off
+features.smooth-scroll = { env = { XDG_CONFIG_HOME = "~/ttybench/lokyr-smooth" } }
+
+[terminals.kitty]
+app = "/Applications/kitty.app"
+launch = ["{app}/Contents/MacOS/kitty", "{command}"]
+features.some-feature = { args = ["-o", "some_option yes"] }
+```
+
+- A feature's `env` replaces the base's variables of the same names, such as the folder of a config of the feature on. Its `args` go right after the terminal's program, for a terminal launched by its arguments.
+- Every tool takes `--feature <name>`: it measures a terminal of that feature on, and skips a terminal that doesn't have it, of the exit status 3, which a session tells as skipped, not failed. Without `--feature`, the tools measure each terminal's base.
+- So that two terminals compare, measure the same thing of both: a terminal's smooth scrolling beside another's scroll by rows measures two features, not two terminals.
+
 ## Run a session
 
 `ttybench run` runs a session that a file describes: the terminals, the tools and their arguments, and how many cycles. Copy [`examples/session.toml`](examples/session.toml):
@@ -54,7 +79,8 @@ ttybench run session.toml
 
 - **Balanced orders**: each cycle turns each run's terminals by one, so that over as many cycles as a run has terminals each one runs first as often as last. ttybench tells you when the cycles don't balance them.
 - **The session's folder**, `sessions/<date>` by default, keeps a copy of the session's and the terminals' files, `machine.json`, `runs.jsonl` of each run's end, `records.jsonl` of every record, each of its cycle, and a folder of each run of its output.
-- **A run that fails** is told, with its output's last lines, and the session goes on. `ttybench run --resume <folder>` takes up a session that was cut off, or runs its failed runs again; what ended well stays as it is.
+- **A run that fails** is told, with its output's last lines, and the session goes on. **A run skipped**, of a feature that its terminal doesn't have, is told apart, and `--resume` doesn't run it again. `ttybench run --resume <folder>` takes up a session that was cut off, or runs its failed runs again; what ended well stays as it is.
+- **`feature`** on a run measures the terminals that have that feature, of it on, and skips the others, without launching them: `--dry-run` tells them, and the session's log keeps them as skipped. A run of no `feature` measures each terminal's base.
 - **`season`** launches each terminal that many times before the first run, not counted, as a terminal just built or installed starts slower for its first launches.
 - **`sudo = true`** on a run that needs `sudo`: the session asks for it once and keeps it.
 

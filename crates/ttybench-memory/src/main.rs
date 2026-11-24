@@ -4,7 +4,7 @@
 //! process's Memory, summed, now and at each one's peak.
 //!
 //! ```text
-//! ttybench-memory --terminal <name> [--terminals <file>] [--rounds <n>]
+//! ttybench-memory --terminal <name> [--terminals <file>] [--feature <name>] [--rounds <n>]
 //!                 [--settle <seconds>] [--pause <seconds>]
 //!                 [--workload "<payload's workload>"] [--session <folder>]
 //! ```
@@ -40,6 +40,7 @@ fn run() -> Result<(), String> {
         &[
             "terminal",
             "terminals",
+            "feature",
             "rounds",
             "settle",
             "pause",
@@ -87,6 +88,9 @@ fn run() -> Result<(), String> {
     }
     let version = results::app_version(&terminal.app);
     let mut conditions = serde_json::Map::new();
+    if let Some(feature) = cli::feature(&args) {
+        conditions.insert("feature".into(), feature.into());
+    }
     conditions.insert("rounds".into(), rounds.into());
     conditions.insert("settle_s".into(), settle.as_secs_f64().into());
     conditions.insert("workload".into(), workload.join(" ").into());

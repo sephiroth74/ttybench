@@ -6,7 +6,7 @@
 //! each round: to the last write, and to the quiet.
 //!
 //! ```text
-//! ttybench-throughput --terminal <name> [--terminals <file>]
+//! ttybench-throughput --terminal <name> [--terminals <file>] [--feature <name>]
 //!                     [--text plain|colors|wide] [--mib <n>] [--rounds <n>]
 //!                     [--pause <seconds>] [--session <folder>]
 //! ```
@@ -54,6 +54,7 @@ fn run() -> Result<(), String> {
         &[
             "terminal",
             "terminals",
+            "feature",
             "text",
             "mib",
             "rounds",
@@ -110,6 +111,9 @@ fn run() -> Result<(), String> {
     let _ = std::fs::remove_file(&file);
     let version = results::app_version(&terminal.app);
     let mut conditions = serde_json::Map::new();
+    if let Some(feature) = cli::feature(&args) {
+        conditions.insert("feature".into(), feature.into());
+    }
     conditions.insert("text".into(), text.into());
     conditions.insert("mib".into(), mib.into());
     conditions.insert("rounds".into(), rounds.into());
