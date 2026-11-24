@@ -445,7 +445,7 @@ ttybench frames --terminal lokyr --feature smooth-scroll
 Each round launches the terminal running `ttybench-payload`, records Instruments' Metal System Trace of it with `xctrace`, Xcode's, over `--seconds` of the same scroll as `ttybench scroll`'s, or of rest, then reads the trace and removes it.
 
 - **A frame's GPU time** is the time that the GPU worked on it, of its vertex and fragment work, which may overlap, in milliseconds.
-- **The frames a second** are those that the terminal drew on the GPU. A terminal may draw a frame at every refresh while it scrolls, though its rows change less often: `ttybench scroll` counts the frames that show the text moved.
+- **The frames a second** are those that the terminal drew on the GPU; at rest, a terminal that draws nothing tells none, as it should. A terminal may draw a frame at every refresh while it scrolls, though its rows change less often: `ttybench scroll` counts the frames that show the text moved.
 - **The share of the refreshes of a new frame**, **the frames shown a second** and **the frames dropped** come of the display's own record of what it showed at each refresh: a frame drawn but never shown counts dropped. The share of the refreshes counts against the display's rate where it tells one, else against the time that a surface stays on screen. A display of a variable rate, such as a MacBook Pro's at 120 Hz, may refresh a little more often than its rate says while frames come: the frames shown a second may then pass the rate, and the share stops at 100 %.
 - **The trace** takes some tens of megabytes a second: ttybench asks for 2 GiB free first, and removes it once read, whatever comes. `--keep` keeps it for Instruments to open.
 

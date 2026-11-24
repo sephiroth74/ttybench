@@ -303,7 +303,8 @@ fn round(
         .quit(QUIT)
         .map_err(|error| format!("{name} does not quit: {error}"))?;
     let (trace, start, end) = recorded?;
-    let figures = figures(name, trace.path(), &tree, start, end);
+    let rest = settings.workload == Workload::Rest;
+    let figures = figures(name, trace.path(), &tree, (start, end), rest);
     if settings.keep {
         eprintln!("the trace kept: {}", trace.keep().display());
     }
@@ -350,13 +351,15 @@ fn record(
 }
 
 /// The figures of the trace at `trace` of the processes `tree`, over the
-/// workload from `start` to `end` by the wall clock.
+/// workload from `start` to `end` by the wall clock. A terminal at `rest`
+/// may draw no frame, as it should: none, of no GPU time nor gap; a
+/// scroll of no frame is a failure.
 fn figures(
     name: &str,
     trace: &std::path::Path,
     tree: &[libc::pid_t],
-    start: SystemTime,
-    end: SystemTime,
+    (start, end): (SystemTime, SystemTime),
+    rest: bool,
 ) -> Result<Figures, String> {
     let began = xctrace::start(trace)?;
     let offset = |at: SystemTime| {
@@ -368,6 +371,18 @@ fn figures(
     let intervals = xctrace::table(trace, "metal-gpu-intervals")?;
     let frames = frames_of(&intervals, tree, span);
     if frames.is_empty() {
+        if rest {
+            return Ok(Figures {
+                gpu_ms: Vec::new(),
+                gaps_ms: Vec::new(),
+                frames_per_s: 0.0,
+                shown: Some(Shown {
+                    share: 0.0,
+                    per_s: 0.0,
+                    dropped: 0,
+                }),
+            });
+        }
         return Err(format!("{name} drew no frame on the GPU in the trace"));
     }
     let seconds = span.1.saturating_sub(span.0) as f64 / 1e9;
