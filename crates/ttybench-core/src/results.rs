@@ -318,13 +318,24 @@ mod tests {
 
     #[test]
     fn an_app_tells_its_version() {
-        // Terminal's build is not its version: both, as `2.15 (488.9)`.
         let version =
             app_version(Path::new("/System/Applications/Utilities/Terminal.app")).unwrap();
-        assert!(
-            version.contains('.') && version.contains(" (") && version.ends_with(')'),
-            "{version}"
-        );
+        assert!(version.contains('.'), "{version}");
+        // A build that is not the version goes after it; one that is, not.
+        let folder = std::env::temp_dir().join(format!("ttybench-bundle-{}", std::process::id()));
+        for (build, told) in [("456", "1.2.3 (456)"), ("1.2.3", "1.2.3")] {
+            let contents = folder.join("X.app/Contents");
+            std::fs::create_dir_all(&contents).unwrap();
+            std::fs::write(
+                contents.join("Info.plist"),
+                format!(
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict><key>CFBundleShortVersionString</key><string>1.2.3</string><key>CFBundleVersion</key><string>{build}</string></dict></plist>\n"
+                ),
+            )
+            .unwrap();
+            assert_eq!(app_version(&folder.join("X.app")).as_deref(), Some(told));
+        }
+        let _ = std::fs::remove_dir_all(&folder);
         assert_eq!(app_version(Path::new("/nonexistent.app")), None);
     }
 }

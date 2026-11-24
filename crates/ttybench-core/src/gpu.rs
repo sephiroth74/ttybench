@@ -64,19 +64,47 @@ fn times_of(clients: &[u8]) -> Result<BTreeMap<libc::pid_t, u64>, String> {
 }
 
 /// The GPU time of each process that holds a client of the GPU now, in
-/// nanoseconds, as IOKit lists the clients of Apple's GPUs.
+/// nanoseconds, as IOKit lists the clients of Apple's GPUs; why not, of a
+/// Mac of no Apple GPU, as a virtual machine's, whose GPU tells no
+/// process's time.
 pub fn process_times() -> Result<BTreeMap<libc::pid_t, u64>, String> {
+    let output = ioreg(&["-r", "-c", "AGXDeviceUserClient", "-a", "-w0"])?;
+    let times = if output.iter().all(u8::is_ascii_whitespace) {
+        BTreeMap::new()
+    } else {
+        times_of(&output)?
+    };
+    if times.is_empty() {
+        // WindowServer holds a client of every Apple GPU that drives a
+        // display.
+        return Err(if has_apple_gpu() {
+            "IOKit lists no client of the GPU, not even WindowServer's".to_owned()
+        } else {
+            "this Mac's GPU is no Apple GPU, as a virtual machine's: it tells no process's GPU time"
+                .to_owned()
+        });
+    }
+    Ok(times)
+}
+
+/// Whether this Mac has an Apple GPU, which IOKit lists as an
+/// `AGXAccelerator` of its model.
+pub fn has_apple_gpu() -> bool {
+    ioreg(&["-r", "-c", "AGXAccelerator", "-d", "1"])
+        .is_ok_and(|output| !output.iter().all(u8::is_ascii_whitespace))
+}
+
+/// The output of `ioreg` of `args`.
+fn ioreg(args: &[&str]) -> Result<Vec<u8>, String> {
     let output = Command::new("/usr/sbin/ioreg")
-        .args(["-r", "-c", "AGXDeviceUserClient", "-a", "-w0"])
+        .args(args)
         .output()
         .map_err(|error| format!("ioreg: {error}"))?;
-    if !output.status.success() {
-        return Err(format!("ioreg failed: {}", output.status));
+    if output.status.success() {
+        Ok(output.stdout)
+    } else {
+        Err(format!("ioreg failed: {}", output.status))
     }
-    if output.stdout.iter().all(u8::is_ascii_whitespace) {
-        return Ok(BTreeMap::new());
-    }
-    times_of(&output.stdout)
 }
 
 /// The GPU time that the processes `pids` used between `before` and
@@ -379,9 +407,18 @@ mod tests {
 
     #[test]
     fn the_gpus_clients_list_here() {
-        let times = process_times().unwrap();
-        if let Some(server) = window_server() {
-            assert!(times.contains_key(&server), "{times:?}");
+        // An Apple GPU lists its clients, WindowServer among them; a
+        // virtual machine's GPU, as a CI runner's, none, which is told.
+        match process_times() {
+            Ok(times) => {
+                if let Some(server) = window_server() {
+                    assert!(times.contains_key(&server), "{times:?}");
+                }
+            }
+            Err(why) => {
+                assert!(!has_apple_gpu(), "{why}");
+                assert!(why.contains("no Apple GPU"), "{why}");
+            }
         }
     }
 }
