@@ -52,6 +52,16 @@ impl Drop for Trace {
     }
 }
 
+/// What a recording records.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// A process, attached to, and what the template records of the whole
+    /// system.
+    Process(libc::pid_t),
+    /// Every process.
+    All,
+}
+
 /// A recording under way.
 #[derive(Debug)]
 pub struct Recording {
@@ -61,19 +71,23 @@ pub struct Recording {
 }
 
 impl Recording {
-    /// Starts recording the template `template` of the process `pid` and of
-    /// what the template records of the whole system, for `limit`, into
-    /// `path`, a trace of its own; once it records, as `xctrace` tells it.
+    /// Starts recording the template `template` of `target`, for `limit`,
+    /// into `path`, a trace of its own; once it records, as `xctrace` tells
+    /// it.
     pub fn start(
         template: &str,
-        pid: libc::pid_t,
+        target: Target,
         limit: Duration,
         path: &Path,
     ) -> Result<Self, String> {
         let _ = std::fs::remove_dir_all(path);
-        let mut child = Command::new("/usr/bin/xcrun")
-            .args(["xctrace", "record", "--template", template, "--attach"])
-            .arg(pid.to_string())
+        let mut command = Command::new("/usr/bin/xcrun");
+        command.args(["xctrace", "record", "--template", template]);
+        match target {
+            Target::Process(pid) => command.arg("--attach").arg(pid.to_string()),
+            Target::All => command.arg("--all-processes"),
+        };
+        let mut child = command
             .arg("--time-limit")
             .arg(format!("{}ms", limit.as_millis()))
             .arg("--output")

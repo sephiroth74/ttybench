@@ -9,7 +9,7 @@
 //! ```text
 //! ttybench-frames --terminal <name> [--terminals <file>] [--feature <name>]
 //!                 [--workload scroll|rest] [--seconds <n>] [--by pixels|lines]
-//!                 [--presence on|off] [--keep] [--rounds <n>]
+//!                 [--awake on|off] [--keep] [--rounds <n>]
 //!                 [--pause <seconds>] [--session <folder>]
 //! ```
 //!
@@ -24,13 +24,13 @@ use std::process::ExitCode;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
+use ttybench_core::awake::Awake;
 use ttybench_core::cli::{self, Args};
 use ttybench_core::config::Terminal;
 use ttybench_core::payload::{self, Payload};
-use ttybench_core::presence::Presence;
 use ttybench_core::results::{self, Machine, Record, Session};
 use ttybench_core::scroll::{self as pattern, By, Pattern};
-use ttybench_core::xctrace::{self, Recording, Table};
+use ttybench_core::xctrace::{self, Recording, Table, Target};
 use ttybench_core::{stats, terminal};
 
 /// How long a round waits for the terminal's window, its payload and its
@@ -73,7 +73,7 @@ enum Workload {
 struct Settings {
     workload: Workload,
     seconds: f64,
-    presence: bool,
+    awake: bool,
     keep: bool,
 }
 
@@ -98,7 +98,7 @@ fn run() -> Result<(), String> {
             "workload",
             "seconds",
             "by",
-            "presence",
+            "awake",
             "rounds",
             "pause",
             "session",
@@ -131,10 +131,10 @@ fn run() -> Result<(), String> {
     let settings = Settings {
         workload,
         seconds,
-        presence: match args.value("presence").unwrap_or("on") {
+        awake: match args.value("awake").unwrap_or("on") {
             "on" => true,
             "off" => false,
-            other => return Err(format!("--presence takes on or off, not `{other}`")),
+            other => return Err(format!("--awake takes on or off, not `{other}`")),
         },
         keep: args.flag("keep"),
     };
@@ -184,7 +184,7 @@ fn run() -> Result<(), String> {
             conditions.insert("by".into(), pattern.by.name().into());
         }
     }
-    conditions.insert("presence".into(), settings.presence.into());
+    conditions.insert("awake".into(), settings.awake.into());
     if let Some(refresh) = Machine::this().refresh_hz {
         conditions.insert("refresh_hz".into(), refresh.into());
     }
@@ -266,7 +266,7 @@ fn round(
             FREE >> 20
         ));
     }
-    let _presence = settings.presence.then(Presence::start);
+    let _awake = settings.awake.then(Awake::start);
     let workload: &[&str] = match settings.workload {
         Workload::Rest => &["rest"],
         Workload::Scroll(_) => &pattern::PAYLOAD,
@@ -318,7 +318,7 @@ fn record(
         pattern::away(x, y);
     }
     let limit = Duration::from_secs_f64(settings.seconds + 3.0);
-    let recording = Recording::start(TEMPLATE, window.pid, limit, path)?;
+    let recording = Recording::start(TEMPLATE, Target::Process(window.pid), limit, path)?;
     thread::sleep(Duration::from_millis(500));
     let start = SystemTime::now();
     match settings.workload {

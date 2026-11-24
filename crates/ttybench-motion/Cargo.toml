@@ -1,0 +1,16 @@
+[package]
+name = "ttybench-motion"
+description = "How smoothly a terminal's window moves: dragged by its titlebar or resized by its corner, the frames that the display showed, those it missed, the compositor's delay, and the CPU of the terminal and of WindowServer, of Instruments' Animation Hitches."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+libc.workspace = true
+serde_json.workspace = true
+ttybench-core.workspace = true
+
+[lints]
+workspace = true

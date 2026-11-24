@@ -57,3 +57,8 @@ tool = "gpu"
 args = ["--workload", "scroll", "--seconds", "10", "--system"]
 rounds = 1
 sudo = true
+
+[[run]]
+tool = "motion"
+args = ["--kind", "drag", "--seconds", "10"]
+rounds = 1

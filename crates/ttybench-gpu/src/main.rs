@@ -10,7 +10,7 @@
 //! ```text
 //! ttybench-gpu --terminal <name> [--terminals <file>] [--feature <name>] [--workload rest|scroll]
 //!              [--seconds <n>] [--by pixels|lines] [--system]
-//!              [--interval <ms>] [--presence on|off] [--rounds <n>]
+//!              [--interval <ms>] [--awake on|off] [--rounds <n>]
 //!              [--pause <seconds>] [--session <folder>]
 //! ```
 //!
@@ -24,12 +24,12 @@ use std::process::ExitCode;
 use std::thread;
 use std::time::Duration;
 
+use ttybench_core::awake::Awake;
 use ttybench_core::cli::{self, Args};
 use ttybench_core::clock::now_ns;
 use ttybench_core::config::Terminal;
 use ttybench_core::gpu::{self, Powermetrics};
 use ttybench_core::payload::{self, Payload};
-use ttybench_core::presence::Presence;
 use ttybench_core::results::{self, Machine, Record, Session};
 use ttybench_core::scroll::{self as pattern, By, Pattern};
 use ttybench_core::{stats, terminal};
@@ -70,7 +70,7 @@ struct Settings {
     seconds: f64,
     system: bool,
     interval: Duration,
-    presence: bool,
+    awake: bool,
 }
 
 /// A round's figures: the GPU time of the terminal's processes and of
@@ -95,7 +95,7 @@ fn run() -> Result<(), String> {
             "seconds",
             "by",
             "interval",
-            "presence",
+            "awake",
             "rounds",
             "pause",
             "session",
@@ -132,10 +132,10 @@ fn run() -> Result<(), String> {
         seconds,
         system: args.flag("system"),
         interval: Duration::from_millis(args.number("interval", 250)?),
-        presence: match args.value("presence").unwrap_or("on") {
+        awake: match args.value("awake").unwrap_or("on") {
             "on" => true,
             "off" => false,
-            other => return Err(format!("--presence takes on or off, not `{other}`")),
+            other => return Err(format!("--awake takes on or off, not `{other}`")),
         },
     };
     let rounds: usize = args.number("rounds", 1)?;
@@ -181,7 +181,7 @@ fn run() -> Result<(), String> {
             conditions.insert("by".into(), pattern.by.name().into());
         }
     }
-    conditions.insert("presence".into(), settings.presence.into());
+    conditions.insert("awake".into(), settings.awake.into());
     if let Some(refresh) = Machine::this().refresh_hz {
         conditions.insert("refresh_hz".into(), refresh.into());
     }
@@ -239,7 +239,7 @@ fn round(
     home: &std::path::Path,
     settings: Settings,
 ) -> Result<Figures, String> {
-    let _presence = settings.presence.then(Presence::start);
+    let _awake = settings.awake.then(Awake::start);
     let workload: &[&str] = match settings.workload {
         Workload::Rest => &["rest"],
         Workload::Scroll(_) => &pattern::PAYLOAD,

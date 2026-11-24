@@ -8,7 +8,7 @@
 //! ```text
 //! ttybench-scroll --terminal <name> [--terminals <file>] [--feature <name>] [--by pixels|lines]
 //!                 [--seconds <n>] [--rate <n>] [--amplitude <points>]
-//!                 [--source window|screen] [--presence on|off]
+//!                 [--source window|screen] [--awake on|off]
 //!                 [--rounds <n>] [--pause <seconds>] [--session <folder>]
 //! ```
 //!
@@ -33,12 +33,12 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use ttybench_core::awake::Awake;
 use ttybench_core::capture::{Capture, Source};
 use ttybench_core::cli::{self, Args};
 use ttybench_core::config::Terminal;
 use ttybench_core::frames::{self, Frame, Rect};
 use ttybench_core::payload::{self, Payload};
-use ttybench_core::presence::Presence;
 use ttybench_core::results::{self, Machine, Record, Session};
 use ttybench_core::scroll::{self as pattern, By, Pattern};
 use ttybench_core::{stats, terminal};
@@ -69,7 +69,7 @@ fn main() -> ExitCode {
 struct Settings {
     pattern: Pattern,
     source: Source,
-    presence: bool,
+    awake: bool,
 }
 
 /// A round's figures: the frames a second, and the gaps between them, in
@@ -95,7 +95,7 @@ fn run() -> Result<(), String> {
             "pause",
             "session",
             "source",
-            "presence",
+            "awake",
         ],
         &[],
     )?;
@@ -118,10 +118,10 @@ fn run() -> Result<(), String> {
             "window" => Source::Window,
             other => return Err(format!("--source takes screen or window, not `{other}`")),
         },
-        presence: match args.value("presence").unwrap_or("on") {
+        awake: match args.value("awake").unwrap_or("on") {
             "on" => true,
             "off" => false,
-            other => return Err(format!("--presence takes on or off, not `{other}`")),
+            other => return Err(format!("--awake takes on or off, not `{other}`")),
         },
     };
     if settings.pattern.seconds < pattern::PERIOD || settings.pattern.rate < 4.0 {
@@ -163,7 +163,7 @@ fn run() -> Result<(), String> {
     conditions.insert("rounds".into(), rounds.into());
     conditions.insert("by".into(), settings.pattern.by.name().into());
     conditions.insert("seconds".into(), settings.pattern.seconds.into());
-    conditions.insert("presence".into(), settings.presence.into());
+    conditions.insert("awake".into(), settings.awake.into());
     conditions.insert(
         "source".into(),
         match settings.source {
@@ -223,7 +223,7 @@ fn round(
     home: &std::path::Path,
     settings: Settings,
 ) -> Result<Figures, String> {
-    let _presence = settings.presence.then(Presence::start);
+    let _awake = settings.awake.then(Awake::start);
     let payload =
         Payload::new(binary, &pattern::PAYLOAD).map_err(|error| format!("the payload: {error}"))?;
     let (launched, _) = terminal::launch_ready(name, terminal, &payload, home, TIMEOUT)?;

@@ -475,6 +475,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ttybench-motion"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde_json",
+ "ttybench-core",
+]
+
+[[package]]
 name = "ttybench-payload"
 version = "0.1.0"
 dependencies = [

@@ -149,7 +149,7 @@ Each round launches the terminal running `ttybench-payload`, which reads keys on
   ttybench sends a shortcut's character with its key, so that an app that matches its shortcuts by their characters, as a menu does, finds them whatever your keyboard's layout. An app that reads the key's place on your layout may not: give it a click.
 - **The cursor must not blink**: ttybench watches the row for a second before the keys, and stops when it changes of its own.
 - **Where the keys go**: `--to process`, the default, sends them to the terminal's process alone, whichever app is in front. `--to system` sends them through the window server, as a keyboard does, to the app in front, which the terminal is as it launches. A click always goes through the window server: leave the Mac alone meanwhile.
-- **A person at the Mac**: macOS counts ttybench's keys, clicks and scrolls as no one's activity, and would let the display sleep in the middle of a session, which leaves nothing to capture. ttybench tells macOS that someone is at the Mac every second while it measures, as a person's typing does; `--presence off` doesn't.
+- **The display kept awake**: macOS counts ttybench's keys, clicks and scrolls as no one's activity, and would let the display sleep in the middle of a session, which leaves nothing to capture. ttybench holds the display awake while it measures, as `caffeinate -d` does; `--awake off` doesn't. It declares no activity of yours, which would hold the window server's compositor a refresh longer on each frame.
 - **Your Mac's state counts**: the same terminal can show a latency some milliseconds lower while you work on the Mac than while it rests. Measure every terminal of a comparison in the same state, and in one session.
 - **What the capture takes**: `--source window`, the default, takes the window alone, each frame as the window server takes the window's new content. `--source screen` takes the screen where the window lies, each frame as the window server composes it, a few milliseconds later, with whatever lies over the window. While ttybench captures a window, macOS shows its capture indicator in the place of the window's buttons, away from the typed row.
 - **Permissions**: the capture takes the Screen Recording permission, and the keys the Accessibility permission, of the app that runs ttybench, such as your terminal or your editor. Without the latter, macOS drops the keys and tells nothing, so ttybench stops before it measures.
@@ -192,7 +192,7 @@ Each round launches the terminal running `ttybench-payload`, which prints 50 000
 - **`--by pixels`**, the default, scrolls as a trackpad does: each period of 2 seconds swipes up `--amplitude` points, 200 by default, over half a second, `--rate` events a second, 120 by default, then lets its momentum slow over the next half second, then the same down, so that the view moves throughout. **`--by lines`** turns a mouse wheel a step at a time, 20 steps a second, up for a second, then down.
 - **The frames are those that the window server took**, as it took them. Which of them each refresh of the display showed is the display's own record: a terminal that draws in step with the display's refreshes gives frames a whole number of refreshes apart, one that draws at a pace of its own gives frames between them, of which a refresh shows the last.
 - **Leave the mouse and the trackpad alone**: the scroll goes through the window server to the window under the pointer, which ttybench moves to the window's middle.
-- **`--source` and `--presence`** are latency's.
+- **`--source` and `--awake`** are latency's.
 
 ### gpu
 
@@ -242,6 +242,32 @@ Two terminals at 60 Hz, 10 seconds of a trackpad's scroll each, of the same feat
 | Ghostty 1.4.0 | smooth | skipped: no smooth scrolling | | | |
 | Lokyr 1.4.0 | by rows | 9.7 | 0.143 · 0.146 ms | 16.0 % | 0 |
 | Ghostty 1.4.0 | by rows | 58.8 | 0.175 · 0.180 ms | 97.4 % | 1 |
+
+### motion
+
+How smoothly a terminal's window moves: dragged by its titlebar or resized by its corner, the frames that the display showed, those that it missed, the compositor's delay, and the CPU of the terminal and of WindowServer.
+
+```sh
+ttybench motion --terminal ghostty --kind drag --seconds 10
+ttybench motion --terminal ghostty --kind resize
+```
+
+Each round launches the terminal running `ttybench-payload` at rest, records Instruments' Animation Hitches of every process with `xctrace`, while the mouse drags the window by its titlebar or resizes it by its bottom-right corner along a sine of `--amplitude` points, 200 by default, and of 2 seconds, `--rate` events a second, 120 by default, as a hand moves back and forth; then reads the trace, over the motion less its first and its last 0.3 seconds, and removes it.
+
+- **The frames a second** that the display showed, of its surfaces' swaps, and **the frames missed**, of the gaps between two swaps longer than a refresh and a half.
+- **The compositor's delay** of each frame, in milliseconds, as the window server tells it.
+- **The CPU** of the terminal's processes and of WindowServer, in percent of a core.
+- **The trace** of every process takes much room: ttybench asks for 4 GiB free, and removes it once read, unless `--keep`.
+- **Leave the mouse and the trackpad alone**: the motion goes through the window server.
+
+Lokyr's window dragged 10 seconds at 60 Hz, measured with ttybench and with the scripts that measured its releases before, of the same build and config:
+
+| Measure | Frames a second | Missed | Compositor's delay, median and 95th percentile | Lokyr's CPU | WindowServer's CPU |
+|---|---|---|---|---|---|
+| The former scripts | 59.0 | 10 | 12.97 · 14.00 ms | 3.3 % | 33.7 % |
+| ttybench | 59.9 | 1 | 12.63 · 14.00 ms | 4.1 % | 35.8 % |
+
+The frames missed vary from a run to the next, from none to ten, for both.
 
 ## License
 

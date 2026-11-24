@@ -215,6 +215,30 @@ pub fn point(x: f64, y: f64) {
     CGEvent::post(CGEventTapLocation::HIDEventTap, event.as_deref());
 }
 
+/// An event of the mouse's left button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Button {
+    /// Pressed.
+    Down,
+    /// Moved while pressed.
+    Dragged,
+    /// Released.
+    Up,
+}
+
+/// Posts `event` of the mouse's left button at `x`, `y`, in points from the
+/// top left of the main display, through the window server, as a hand's
+/// drag of a window's titlebar or corner.
+pub fn button(event: Button, x: f64, y: f64) {
+    let kind = match event {
+        Button::Down => CGEventType::LeftMouseDown,
+        Button::Dragged => CGEventType::LeftMouseDragged,
+        Button::Up => CGEventType::LeftMouseUp,
+    };
+    let event = CGEvent::new_mouse_event(None, kind, CGPoint { x, y }, CGMouseButton::Left);
+    CGEvent::post(CGEventTapLocation::HIDEventTap, event.as_deref());
+}
+
 /// A scroll's event: a trackpad's, of its precise pixels and its phases,
 /// or a mouse wheel's, of lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

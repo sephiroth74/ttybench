@@ -35,13 +35,13 @@ use std::process::ExitCode;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use ttybench_core::awake::Awake;
 use ttybench_core::capture::{Capture, Source};
 use ttybench_core::cli::{self, Args};
 use ttybench_core::config::Terminal;
 use ttybench_core::frames::{self, Frame, Line, Watch};
 use ttybench_core::keys::{self, To};
 use ttybench_core::payload::{self, Payload};
-use ttybench_core::presence::Presence;
 use ttybench_core::results::{self, Machine, Record, Session};
 use ttybench_core::{stats, terminal};
 
@@ -111,7 +111,7 @@ struct Settings {
     flood: bool,
     target: Target,
     source: Source,
-    presence: bool,
+    awake: bool,
 }
 
 /// A round's measures: each key's latency, in milliseconds, the keys
@@ -138,7 +138,7 @@ fn run() -> Result<(), String> {
             "pause",
             "session",
             "source",
-            "presence",
+            "awake",
         ],
         &["sync", "flood"],
     )?;
@@ -163,7 +163,7 @@ fn run() -> Result<(), String> {
         sync,
         flood,
         source: source(&args)?,
-        presence: presence(&args)?,
+        awake: awake(&args)?,
         target: match args.value("to").unwrap_or("process") {
             "process" => Target::Process,
             "system" => Target::System,
@@ -230,7 +230,7 @@ fn run() -> Result<(), String> {
         if settings.flood { "flood" } else { "rest" }.into(),
     );
     conditions.insert("echo".into(), "tty".into());
-    conditions.insert("presence".into(), settings.presence.into());
+    conditions.insert("awake".into(), settings.awake.into());
     conditions.insert(
         "source".into(),
         match settings.source {
@@ -287,7 +287,7 @@ fn round(
     home: &std::path::Path,
     settings: &Settings,
 ) -> Result<Round, String> {
-    let _presence = settings.presence.then(Presence::start);
+    let _awake = settings.awake.then(Awake::start);
     let line = LINE.to_string();
     let payload = Payload::new(binary, &["keys", "--count", "0", "--line", &line])
         .map_err(|error| format!("the payload: {error}"))?;
@@ -508,13 +508,13 @@ impl Random {
     }
 }
 
-/// Whether the user is declared active while the tool measures, as
-/// `--presence` says: on by default.
-fn presence(args: &Args) -> Result<bool, String> {
-    match args.value("presence").unwrap_or("on") {
+/// Whether the display is held awake while the tool measures, as
+/// `--awake` says: on by default.
+fn awake(args: &Args) -> Result<bool, String> {
+    match args.value("awake").unwrap_or("on") {
         "on" => Ok(true),
         "off" => Ok(false),
-        other => Err(format!("--presence takes on or off, not `{other}`")),
+        other => Err(format!("--awake takes on or off, not `{other}`")),
     }
 }
 
