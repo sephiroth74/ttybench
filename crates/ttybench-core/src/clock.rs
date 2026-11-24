@@ -17,6 +17,30 @@ pub fn now_ns() -> u64 {
         + u64::try_from(time.tv_nsec).unwrap_or(0)
 }
 
+/// `ticks` of the Mach clock in nanoseconds of the shared clock, of the
+/// clock's timebase: the kernel counts a process's CPU time in those
+/// ticks, and the window server times its frames in them.
+pub fn mach_to_ns(ticks: u64) -> u64 {
+    /// `<mach/mach_time.h>`'s `mach_timebase_info_data_t`.
+    #[repr(C)]
+    struct Timebase {
+        numer: u32,
+        denom: u32,
+    }
+    unsafe extern "C" {
+        fn mach_timebase_info(info: *mut Timebase) -> libc::c_int;
+    }
+    let mut timebase = Timebase { numer: 0, denom: 0 };
+    // SAFETY: `timebase` is a writable struct of the layout that the call
+    // fills in.
+    let status = unsafe { mach_timebase_info(&raw mut timebase) };
+    if status != 0 || timebase.denom == 0 {
+        return ticks;
+    }
+    u64::try_from(u128::from(ticks) * u128::from(timebase.numer) / u128::from(timebase.denom))
+        .unwrap_or(u64::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -27,5 +51,18 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         let elapsed = now_ns() - before;
         assert!((5_000_000..1_000_000_000).contains(&elapsed), "{elapsed}");
+    }
+
+    #[test]
+    fn the_mach_clock_is_the_shared_clock() {
+        unsafe extern "C" {
+            fn mach_absolute_time() -> u64;
+        }
+        let before = now_ns();
+        // SAFETY: a call of no argument that reads the clock.
+        let ticks = unsafe { mach_absolute_time() };
+        let after = now_ns();
+        let at = mach_to_ns(ticks);
+        assert!(before <= at && at <= after, "{before} {at} {after}");
     }
 }

@@ -1,0 +1,15 @@
+[package]
+name = "ttybench-latency"
+description = "How fast a terminal shows a typed key: from the key's press to the frame that shows its character, as the window server displayed it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+ttybench-core.workspace = true
+
+[lints]
+workspace = true

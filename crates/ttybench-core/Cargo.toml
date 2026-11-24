@@ -1,6 +1,6 @@
 [package]
 name = "ttybench-core"
-description = "The library that ttybench's tools share: finding the tools, the terminals' config, their launch, the results."
+description = "The library that ttybench's tools share: finding the tools, the terminals' config, their launch, their windows' capture, the results."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,11 +8,17 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+block2.workspace = true
+dispatch2.workspace = true
 libc.workspace = true
 objc2.workspace = true
 objc2-app-kit = { workspace = true, features = ["std", "libc", "NSRunningApplication"] }
 objc2-core-foundation = { workspace = true, features = ["std", "CFArray", "CFCGTypes", "CFDictionary", "CFNumber", "CFString"] }
 objc2-core-graphics = { workspace = true, features = ["std", "libc", "CGEvent", "CGEventTypes", "CGDirectDisplay", "CGRemoteOperation", "CGWindow"] }
+objc2-core-media = { workspace = true, features = ["std", "CMBase", "CMSampleBuffer", "CMTime", "objc2-core-video"] }
+objc2-core-video = { workspace = true, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
+objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSEnumerator", "NSError", "NSString"] }
+objc2-screen-capture-kit = { workspace = true, features = ["std", "SCStream", "SCShareableContent", "block2", "dispatch2", "objc2-core-foundation", "objc2-core-graphics", "objc2-core-media"] }
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

@@ -125,36 +125,13 @@ pub struct Usage {
 pub fn usage(pid: libc::pid_t) -> io::Result<Usage> {
     let info = rusage(pid)?;
     Ok(Usage {
-        cpu_ns: mach_to_ns(info.ri_user_time.saturating_add(info.ri_system_time)),
+        cpu_ns: crate::clock::mach_to_ns(info.ri_user_time.saturating_add(info.ri_system_time)),
         package_idle: info.ri_pkg_idle_wkups,
         interrupt: info.ri_interrupt_wkups,
         energy_nj: energy(pid).unwrap_or(0),
         footprint: info.ri_phys_footprint,
         peak: info.ri_lifetime_max_phys_footprint,
     })
-}
-
-/// `ticks` of the Mach clock in nanoseconds, of the clock's timebase: the
-/// kernel counts a process's CPU time in those ticks.
-fn mach_to_ns(ticks: u64) -> u64 {
-    /// `<mach/mach_time.h>`'s `mach_timebase_info_data_t`.
-    #[repr(C)]
-    struct Timebase {
-        numer: u32,
-        denom: u32,
-    }
-    unsafe extern "C" {
-        fn mach_timebase_info(info: *mut Timebase) -> libc::c_int;
-    }
-    let mut timebase = Timebase { numer: 0, denom: 0 };
-    // SAFETY: `timebase` is a writable struct of the layout that the call
-    // fills in.
-    let status = unsafe { mach_timebase_info(&raw mut timebase) };
-    if status != 0 || timebase.denom == 0 {
-        return ticks;
-    }
-    u64::try_from(u128::from(ticks) * u128::from(timebase.numer) / u128::from(timebase.denom))
-        .unwrap_or(u64::MAX)
 }
 
 /// What each process of `pids` has used since it started, of those that

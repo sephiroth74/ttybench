@@ -9,8 +9,15 @@
 //!   rest  [--seconds <n>]                 rest, of no output
 //!   lines [--count <n>] [--width <n>]     print lines of a width
 //!   cat   --file <path>                   print a file, timed to its last byte
-//!   keys  [--count <n>]                   read keys in raw mode, each told
+//!   keys  [--count <n>] [--echo tty|payload] [--line <n>]
+//!                                         read keys, each told
 //! ```
+//!
+//! `keys` reads `count` keys, 1 by default, 0 for as many as come. The
+//! terminal's line discipline echoes each, as it does to `cat` at a
+//! prompt, or, of `--echo payload`, the payload does, in raw mode. Of
+//! `--line`, the keys go on an empty row in the screen's middle, cleared
+//! after every `line` keys, so that they never scroll.
 
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -25,7 +32,16 @@ enum Workload {
     Rest { seconds: Option<u64> },
     Lines { count: u64, width: usize },
     Cat { file: PathBuf },
-    Keys { count: u64 },
+    Keys { count: u64, echo: Echo, line: u64 },
+}
+
+/// Who echoes the keys that `keys` reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Echo {
+    /// The terminal's line discipline, of the kernel.
+    Tty,
+    /// The payload, in raw mode.
+    Payload,
 }
 
 /// Its arguments.
@@ -58,7 +74,7 @@ fn main() -> ExitCode {
         "rows": rows,
         "time_ns": now_ns(),
     }));
-    let done = match run(&options.workload, &mut events) {
+    let done = match run(&options.workload, rows, &mut events) {
         Ok(done) => done,
         Err(error) => {
             events.tell(
@@ -132,6 +148,14 @@ fn parse(args: Vec<String>) -> Result<Options, String> {
         },
         "keys" => Workload::Keys {
             count: number("count", Some(1))?.unwrap_or(1),
+            echo: match values.get("echo").map(String::as_str) {
+                None | Some("tty") => Echo::Tty,
+                Some("payload") => Echo::Payload,
+                Some(other) => {
+                    return Err(format!("--echo takes tty or payload, not `{other}`"));
+                }
+            },
+            line: number("line", Some(0))?.unwrap_or(0),
         },
         other => {
             return Err(format!(
@@ -146,8 +170,9 @@ fn parse(args: Vec<String>) -> Result<Options, String> {
     })
 }
 
-/// Runs `workload`, telling its keys through `events`: its end's record.
-fn run(workload: &Workload, events: &mut Events) -> io::Result<Value> {
+/// Runs `workload` in a terminal of `rows` rows, telling its keys through
+/// `events`: its end's record.
+fn run(workload: &Workload, rows: u16, events: &mut Events) -> io::Result<Value> {
     let mut out = io::stdout().lock();
     match workload {
         Workload::Rest { seconds } => {
@@ -191,20 +216,31 @@ fn run(workload: &Workload, events: &mut Events) -> io::Result<Value> {
                 "started_ns": started, "time_ns": ended,
             }))
         }
-        Workload::Keys { count } => {
-            let _raw = Raw::enter()?;
+        Workload::Keys { count, echo, line } => {
+            let _mode = Mode::enter(*echo)?;
+            if *line > 0 {
+                write!(out, "\x1b[H\x1b[2J\x1b[{};1H", (rows / 2).max(1))?;
+                out.flush()?;
+            }
             let mut input = io::stdin().lock();
             let mut byte = [0_u8; 1];
-            for _ in 0..*count {
+            let mut read = 0_u64;
+            while *count == 0 || read < *count {
                 if input.read(&mut byte)? == 0 {
                     break;
                 }
                 let at = now_ns();
-                out.write_all(&byte)?;
+                read += 1;
+                if *echo == Echo::Payload {
+                    out.write_all(&byte)?;
+                }
+                if *line > 0 && read.is_multiple_of(*line) {
+                    out.write_all(b"\r\x1b[K")?;
+                }
                 out.flush()?;
                 events.tell(&json!({ "event": "key", "byte": byte[0], "time_ns": at }));
             }
-            Ok(json!({ "event": "done", "workload": "keys", "time_ns": now_ns() }))
+            Ok(json!({ "event": "done", "workload": "keys", "count": read, "time_ns": now_ns() }))
         }
     }
 }
@@ -248,30 +284,40 @@ fn grid() -> (u16, u16) {
     }
 }
 
-/// The terminal in raw mode while it lives, as it was after.
-struct Raw(libc::termios);
+/// The terminal's input mode while it lives, as it was after.
+struct Mode(libc::termios);
 
-impl Raw {
-    /// The input's terminal in raw mode.
-    fn enter() -> io::Result<Self> {
+impl Mode {
+    /// The input's terminal read a byte at a time: in raw mode for the
+    /// payload's echo, or of the line discipline's echo and signals.
+    fn enter(echo: Echo) -> io::Result<Self> {
         // SAFETY: `termios` is plain data, which `tcgetattr` fills in.
         let mut saved: libc::termios = unsafe { std::mem::zeroed() };
         // SAFETY: `saved` is a writable `termios` for `tcgetattr`.
         if unsafe { libc::tcgetattr(libc::STDIN_FILENO, &raw mut saved) } != 0 {
             return Err(io::Error::last_os_error());
         }
-        let mut raw = saved;
-        // SAFETY: `raw` is a valid `termios`, which `cfmakeraw` changes.
-        unsafe { libc::cfmakeraw(&raw mut raw) };
-        // SAFETY: `raw` is a valid `termios` for `tcsetattr`.
-        if unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw const raw) } != 0 {
+        let mut mode = saved;
+        match echo {
+            // SAFETY: `mode` is a valid `termios`, which `cfmakeraw`
+            // changes.
+            Echo::Payload => unsafe { libc::cfmakeraw(&raw mut mode) },
+            Echo::Tty => {
+                mode.c_lflag &= !libc::ICANON;
+                mode.c_lflag |= libc::ECHO;
+                mode.c_cc[libc::VMIN] = 1;
+                mode.c_cc[libc::VTIME] = 0;
+            }
+        }
+        // SAFETY: `mode` is a valid `termios` for `tcsetattr`.
+        if unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw const mode) } != 0 {
             return Err(io::Error::last_os_error());
         }
         Ok(Self(saved))
     }
 }
 
-impl Drop for Raw {
+impl Drop for Mode {
     fn drop(&mut self) {
         // SAFETY: the saved `termios` of the same terminal.
         unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw const self.0) };

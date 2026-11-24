@@ -29,3 +29,8 @@ args = ["--text", "plain"]
 tool = "throughput"
 args = ["--text", "colors"]
 terminals = ["ghostty", "lokyr"]
+
+[[run]]
+tool = "latency"
+args = ["--keys", "200"]
+rounds = 1

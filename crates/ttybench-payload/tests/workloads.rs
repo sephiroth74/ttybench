@@ -145,8 +145,20 @@ fn it_prints_a_file_to_its_last_byte() {
     let _ = std::fs::remove_file(&file);
 }
 
+/// Waits for `run` to have printed `text`, for a second at most.
+fn printed_within(run: &Run, text: &str) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while std::time::Instant::now() < deadline {
+        if run.printed().contains(text) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    false
+}
+
 #[test]
-fn it_reads_its_keys_each_told() {
+fn it_reads_its_keys_each_told_and_the_line_discipline_echoes_them() {
     let mut run = run("keys", &["keys", "--count", "2"]);
     assert_eq!(run.event()["event"], "ready");
     run.master.write_all(b"xy").unwrap();
@@ -157,8 +169,58 @@ fn it_reads_its_keys_each_told() {
         (Some("key"), Some(u64::from(b'x')))
     );
     assert_eq!(second["byte"].as_u64(), Some(u64::from(b'y')));
-    assert_eq!(run.event()["event"], "done");
+    let done = run.event();
+    assert_eq!(
+        (done["event"].as_str(), done["count"].as_u64()),
+        (Some("done"), Some(2))
+    );
+    assert!(printed_within(&run, "xy"), "{:?}", run.printed());
     run.end();
+}
+
+#[test]
+fn of_its_own_echo_it_echoes_its_keys_in_raw_mode() {
+    let mut run = run("keys-raw", &["keys", "--count", "2", "--echo", "payload"]);
+    assert_eq!(run.event()["event"], "ready");
+    run.master.write_all(b"ab").unwrap();
+    for _ in 0..2 {
+        assert_eq!(run.event()["event"], "key");
+    }
+    assert_eq!(run.event()["event"], "done");
+    assert!(printed_within(&run, "ab"), "{:?}", run.printed());
+    run.end();
+}
+
+#[test]
+fn of_a_line_its_keys_go_on_the_middle_row_cleared_after_each_line() {
+    let mut run = run("keys-line", &["keys", "--count", "5", "--line", "2"]);
+    assert_eq!(run.event()["event"], "ready");
+    // The screen cleared and the cursor on the middle row of 30.
+    assert!(
+        printed_within(&run, "\x1b[H\x1b[2J\x1b[15;1H"),
+        "{:?}",
+        run.printed()
+    );
+    for key in b"abcde" {
+        run.master.write_all(&[*key]).unwrap();
+        assert_eq!(run.event()["byte"].as_u64(), Some(u64::from(*key)));
+    }
+    assert_eq!(run.event()["count"].as_u64(), Some(5));
+    assert!(
+        printed_within(&run, "ab\r\x1b[Kcd\r\x1b[Ke"),
+        "{:?}",
+        run.printed()
+    );
+    run.end();
+}
+
+#[test]
+fn an_echo_of_no_one_is_refused() {
+    let status = Command::new(env!("CARGO_BIN_EXE_ttybench-payload"))
+        .args(["keys", "--echo", "nobody"])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(2));
 }
 
 #[test]

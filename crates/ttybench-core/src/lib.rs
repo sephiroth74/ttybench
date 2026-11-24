@@ -2,9 +2,11 @@
 //! own, `ttybench-<tool>`, usable alone, which the dispatcher `ttybench`
 //! runs as `ttybench <tool>`, as `git` runs its commands.
 
+pub mod capture;
 pub mod cli;
 pub mod clock;
 pub mod config;
+pub mod frames;
 pub mod keys;
 pub mod payload;
 pub mod process;

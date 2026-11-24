@@ -98,6 +98,21 @@ ttybench throughput --terminal ghostty --text plain --mib 256 --rounds 5
 
 Each round launches the terminal running `ttybench-payload`, which prints a file of `--mib` MiB, 256 by default, as fast as the terminal takes it: a smaller file leaves more of its time to the window's first frames. Two rates come of each round: to the last byte's write, as the terminal took the bytes, and to the quiet, as its processes' CPU drops below 5 % of a core for 60 ms, once it has drawn what it took. `--text` is `plain`, `colors` or `wide`.
 
+### latency
+
+How fast a terminal shows a key that you type: from the key's press to the frame that shows its character on screen.
+
+```sh
+ttybench latency --terminal ghostty --keys 100 --spacing 150
+```
+
+Each round launches the terminal running `ttybench-payload`, which reads keys on an empty row of the window's middle that the terminal echoes them on, as `cat` does at a prompt, and clears it every 40 keys. ttybench captures the terminal's window with ScreenCaptureKit, strikes a few letters slowly to find the row and its cells, then strikes `--keys` letters, `--spacing` milliseconds apart. A key's latency ends at the first frame that shows its row changed, at the time the window server displayed that frame, so that the capture's own delay doesn't count.
+
+- **The cursor must not blink**: ttybench watches the row for a second before the keys, and stops when it changes of its own.
+- **Where the keys go**: `--to process`, the default, sends them to the terminal's process alone, whichever app is in front. `--to system` sends them through the window server, as a keyboard does, to the app in front, which the terminal is as it launches; leave the Mac alone meanwhile.
+- **A display's refresh** limits what any measure of the screen sees: a frame shows at the next refresh after the terminal draws it, so a key's latency includes a part of a refresh, up to 16.7 ms at 60 Hz.
+- **Permissions**: the capture takes the Screen Recording permission, and the keys the Accessibility permission, of the app that runs ttybench, such as your terminal or your editor.
+
 ## License
 
 MIT, as [LICENSE](LICENSE) says.

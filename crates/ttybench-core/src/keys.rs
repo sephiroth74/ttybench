@@ -1,13 +1,14 @@
 //! The keys that a tool types into a terminal, as a hand would: posted to
 //! the terminal's process alone, so that none reaches another app,
-//! whichever is in front. Posting them takes the Accessibility permission
-//! of the app that runs the tool, as macOS grants it to the terminal or
-//! the editor that runs a command-line tool.
+//! whichever is in front, or, as a keyboard's, to the window server, which
+//! sends them to the app in front. Posting them takes the Accessibility
+//! permission of the app that runs the tool, as macOS grants it to the
+//! terminal or the editor that runs a command-line tool.
 
 use std::thread;
 use std::time::Duration;
 
-use objc2_core_graphics::{CGEvent, CGEventFlags};
+use objc2_core_graphics::{CGEvent, CGEventFlags, CGEventTapLocation};
 
 use crate::config::Key;
 
@@ -134,6 +135,40 @@ pub fn code(key: &str) -> Option<(u16, bool)> {
         _ => return None,
     };
     Some((code, shift))
+}
+
+/// Where a key goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum To {
+    /// The process of this number, alone.
+    Process(libc::pid_t),
+    /// The window server, as a keyboard's key, which goes to the app in
+    /// front.
+    System,
+}
+
+/// Strikes the key `code`, of no modifier, to `to`: pressed, then released
+/// after [`PAUSE`], as a hand strikes it; the time of its press, in
+/// nanoseconds of the shared clock, as close before it was posted as can
+/// be.
+pub fn strike(to: To, code: u16) -> u64 {
+    let events = [true, false].map(|down| {
+        let event = CGEvent::new_keyboard_event(None, code, down);
+        CGEvent::set_flags(event.as_deref(), CGEventFlags::empty());
+        event
+    });
+    let mut pressed = 0;
+    for (at, event) in events.iter().enumerate() {
+        if at == 0 {
+            pressed = crate::clock::now_ns();
+        }
+        match to {
+            To::Process(pid) => CGEvent::post_to_pid(pid, event.as_deref()),
+            To::System => CGEvent::post(CGEventTapLocation::HIDEventTap, event.as_deref()),
+        }
+        thread::sleep(PAUSE);
+    }
+    pressed
 }
 
 /// Posts the key `code`, down or up, of `flags`, to the process `pid`.
