@@ -310,7 +310,9 @@ mod tests {
         let command = script(
             &dir,
             "run.sh",
-            &format!("touch '{}'; /bin/sleep 30 & wait", marker.display()),
+            // The child first, then the mark: the tree holds both once the
+            // mark is there.
+            &format!("/bin/sleep 30 & touch '{}'; wait", marker.display()),
         )
         .unwrap();
         let launched = launch("sh", &terminals.terminals["sh"], &command, &dir, &[]).unwrap();
