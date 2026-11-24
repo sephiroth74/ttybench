@@ -36,8 +36,11 @@ pub struct Launched {
 }
 
 /// The processes of the app `app` that run, its own executables', as a
-/// copy that a run would meet.
+/// copy that a run would meet: of its real path, as the kernel tells a
+/// process's, so that an app under a link, as `/tmp`'s to `/private/tmp`,
+/// finds its own.
 pub fn running_copies(app: &Path) -> Vec<libc::pid_t> {
+    let app = app.canonicalize().unwrap_or_else(|_| app.to_path_buf());
     let executables = app.join("Contents/MacOS");
     process::all_pids()
         .unwrap_or_default()
@@ -265,6 +268,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn an_apps_copies_found_through_a_link() {
+        let dir = folder("link");
+        let real = dir.join("real");
+        let executables = real.join("X.app/Contents/MacOS");
+        std::fs::create_dir_all(&executables).unwrap();
+        std::fs::copy("/bin/sleep", executables.join("x")).unwrap();
+        std::os::unix::fs::symlink(&real, dir.join("link")).unwrap();
+        let mut child = std::process::Command::new(executables.join("x"))
+            .arg("5")
+            .spawn()
+            .unwrap();
+        let pid = libc::pid_t::try_from(child.id()).unwrap();
+        // As `/tmp` links to `/private/tmp`: the app named through the
+        // link, the process of its real path.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut found = false;
+        while !found && Instant::now() < deadline {
+            found = running_copies(&dir.join("link/X.app")).contains(&pid);
+            thread::sleep(POLL);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(found);
     }
 
     #[test]
