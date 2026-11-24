@@ -337,7 +337,7 @@ How fast a terminal prints: the MiB a second of a file that it prints, of plain 
 ttybench throughput --terminal ghostty --text plain --mib 256 --rounds 5
 ```
 
-Each round launches the terminal running `ttybench-payload`, which prints a file of `--mib` MiB, 256 by default, as fast as the terminal takes it: a smaller file leaves more of its time to the window's first frames. Two rates come of each round: to the last byte's write, as the terminal took the bytes, and to the quiet, as its processes' CPU drops below 5 % of a core for 60 ms, once it has drawn what it took. `--text` is `plain`, `colors` or `wide`.
+Each round launches the terminal running `ttybench-payload`, which prints a file of `--mib` MiB, 256 by default, as fast as the terminal takes it: a smaller file leaves more of its time to the window's first frames. Two rates come of each round: to the last byte's write, as the terminal took the bytes, and to the quiet, as its processes' CPU drops below 5 % of a core for 60 ms, once it has drawn what it took. `--text` is `plain`, `colors` or `wide`. Each text's file of each size is written once, into the temporary folder's `ttybench-cache`, and printed again by every run after: a session writes no GiB a run, which the system's file watchers, as an antivirus's, would take the machine for while it measures.
 
 ### latency
 

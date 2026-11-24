@@ -10,6 +10,11 @@
 //!                     [--text plain|colors|wide] [--mib <n>] [--rounds <n>]
 //!                     [--pause <seconds>] [--session <folder>]
 //! ```
+//!
+//! The file of each text and size is written once, into the temporary
+//! folder's `ttybench-cache`, and printed again by every run after, so that
+//! a session's runs write no GiB each, which the system's file watchers,
+//! as an antivirus's, would take the machine for.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -108,7 +113,6 @@ fn run() -> Result<(), String> {
             thread::sleep(pause);
         }
     }
-    let _ = std::fs::remove_file(&file);
     let version = results::app_version(&terminal.app);
     let mut conditions = serde_json::Map::new();
     if let Some(feature) = cli::feature(&args) {
@@ -170,10 +174,26 @@ fn quiet_at(pids: &[libc::pid_t], since: u64) -> u64 {
     since
 }
 
-/// A file of `mib` MiB of the text `text` in the temporary folder:
-/// `plain` lines of ASCII, `colors` of a 256 colors' escape before each
-/// character, `wide` of CJK ideographs, two cells each.
+/// The file of `mib` MiB of the text `text`, in the temporary folder's
+/// `ttybench-cache`: written once, whole, then kept for the runs after.
 fn workload_file(text: &str, mib: u64) -> Result<PathBuf, String> {
+    workload_file_in(&std::env::temp_dir().join(CACHE), text, mib)
+}
+
+/// The folder of the files that the runs share, in the temporary folder.
+const CACHE: &str = "ttybench-cache";
+
+/// The file of `mib` MiB of the text `text` in `folder`, written whole of
+/// a name of its own first, then renamed, so that a run cut off leaves
+/// none half written, and kept for the runs after: `plain` lines of ASCII,
+/// `colors` of a 256 colors' escape before each character, `wide` of CJK
+/// ideographs, two cells each.
+fn workload_file_in(folder: &Path, text: &str, mib: u64) -> Result<PathBuf, String> {
+    let path = folder.join(format!("throughput-{text}-{mib}mib.txt"));
+    if path.is_file() {
+        return Ok(path);
+    }
+    std::fs::create_dir_all(folder).map_err(|error| format!("the workload's folder: {error}"))?;
     let line: String = match text {
         "plain" => (0..79)
             .map(|at| char::from(b' ' + 1 + (at % 94) as u8))
@@ -193,10 +213,12 @@ fn workload_file(text: &str, mib: u64) -> Result<PathBuf, String> {
         "wide" => "漢字の幅は二つのセルを占めますこれは広い文字の試験です二十字".repeat(2),
         other => return Err(format!("--text is plain, colors or wide, not `{other}`")),
     };
-    let path =
-        std::env::temp_dir().join(format!("ttybench-throughput-{text}-{}", std::process::id()));
+    let partial = folder.join(format!(
+        "throughput-{text}-{mib}mib.txt.{}",
+        std::process::id()
+    ));
     let mut file = std::io::BufWriter::new(
-        std::fs::File::create(&path).map_err(|error| format!("the workload's file: {error}"))?,
+        std::fs::File::create(&partial).map_err(|error| format!("the workload's file: {error}"))?,
     );
     let mut size = 0_u64;
     while size < mib * MIB {
@@ -205,6 +227,8 @@ fn workload_file(text: &str, mib: u64) -> Result<PathBuf, String> {
     }
     file.flush()
         .map_err(|error| format!("the workload's file: {error}"))?;
+    drop(file);
+    std::fs::rename(&partial, &path).map_err(|error| format!("the workload's file: {error}"))?;
     Ok(path)
 }
 
@@ -214,14 +238,23 @@ mod tests {
 
     #[test]
     fn each_text_makes_a_file_of_its_size_and_its_kind() {
+        let folder =
+            std::env::temp_dir().join(format!("ttybench-throughput-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
         for (text, holds) in [
             ("plain", "!\"#$"),
             ("colors", "\x1b[38;5;1mb"),
             ("wide", "漢字"),
         ] {
-            let path = workload_file(text, 1).expect(text);
+            let path = workload_file_in(&folder, text, 1).expect(text);
+            let written = std::fs::metadata(&path).unwrap().modified().unwrap();
+            // Kept: the run after prints the same file, not written again.
+            assert_eq!(workload_file_in(&folder, text, 1).unwrap(), path);
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().modified().unwrap(),
+                written
+            );
             let contents = std::fs::read_to_string(&path).expect(text);
-            std::fs::remove_file(&path).expect(text);
             assert!(
                 contents.len() as u64 >= MIB,
                 "{text}: {} bytes",
@@ -235,6 +268,16 @@ mod tests {
                 "{text}"
             );
         }
+        // No half-written file left beside them.
+        let names: Vec<String> = std::fs::read_dir(&folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names.iter().all(|name| name.ends_with("mib.txt")),
+            "{names:?}"
+        );
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]
