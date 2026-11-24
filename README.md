@@ -231,7 +231,7 @@ Each round launches the terminal running `ttybench-payload`, records Instruments
 
 - **A frame's GPU time** is the time that the GPU worked on it, of its vertex and fragment work, which may overlap, in milliseconds.
 - **The frames a second** are those that the terminal drew on the GPU. A terminal may draw a frame at every refresh while it scrolls, though its rows change less often: `ttybench scroll` counts the frames that show the text moved.
-- **The share of the refreshes of a new frame** and **the frames dropped** come of the display's own record of what it showed at each refresh: a frame drawn but never shown counts dropped. The share of the refreshes counts against the display's rate where it tells one, else against the time that a surface stays on screen.
+- **The share of the refreshes of a new frame**, **the frames shown a second** and **the frames dropped** come of the display's own record of what it showed at each refresh: a frame drawn but never shown counts dropped. The share of the refreshes counts against the display's rate where it tells one, else against the time that a surface stays on screen. A display of a variable rate, such as a MacBook Pro's at 120 Hz, may refresh a little more often than its rate says while frames come: the frames shown a second may then pass the rate, and the share stops at 100 %.
 - **The trace** takes some tens of megabytes a second: ttybench asks for 2 GiB free first, and removes it once read, whatever comes. `--keep` keeps it for Instruments to open.
 
 Two terminals at 60 Hz, 10 seconds of a trackpad's scroll each, of the same feature:
@@ -242,6 +242,8 @@ Two terminals at 60 Hz, 10 seconds of a trackpad's scroll each, of the same feat
 | Ghostty 1.4.0 | smooth | skipped: no smooth scrolling | | | |
 | Lokyr 1.4.0 | by rows | 9.7 | 0.143 · 0.146 ms | 16.0 % | 0 |
 | Ghostty 1.4.0 | by rows | 58.8 | 0.175 · 0.180 ms | 97.4 % | 1 |
+
+The same scroll on a MacBook Pro's built-in display at 120 Hz, of Lokyr's smooth scrolling: 118.2 frames a second, 117.7 of them shown, 98.1 % of the refreshes of a new frame, 2 frames dropped, a frame's GPU time 0.296 · 0.341 ms.
 
 ### motion
 

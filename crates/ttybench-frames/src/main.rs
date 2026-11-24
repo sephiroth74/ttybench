@@ -3,8 +3,9 @@
 //! System Trace of it, of `xctrace`, Xcode's, over `seconds` of a scroll as
 //! `ttybench-scroll`'s, or of rest; then reads of the trace each of the
 //! terminal's frames' GPU time, the frames a second, the gaps between them,
-//! and the share of the display's refreshes that showed a new one, as the
-//! display's own record tells it; and removes the trace.
+//! the frames that the display showed a second and the share of its
+//! refreshes that showed a new one, as the display's own record tells it;
+//! and removes the trace.
 //!
 //! ```text
 //! ttybench-frames --terminal <name> [--terminals <file>] [--feature <name>]
@@ -158,7 +159,9 @@ fn run() -> Result<(), String> {
             gpu.map_or(f64::NAN, |gpu| gpu.median),
             gpu.map_or(f64::NAN, |gpu| gpu.p95),
             figures.shown.map_or(String::new(), |shown| format!(
-                ", {:.1} % of the refreshes of a new frame, {} frames dropped",
+                ", {:.1} shown a second, {:.1} % of the refreshes of a new frame, {} frames \
+                 dropped",
+                shown.per_s,
                 shown.share * 100.0,
                 shown.dropped
             )),
@@ -210,6 +213,14 @@ fn run() -> Result<(), String> {
             measured
                 .iter()
                 .filter_map(|f| f.shown.map(|shown| shown.share * 100.0))
+                .collect(),
+        ),
+        (
+            "frames_shown_per_s",
+            "frames/s",
+            measured
+                .iter()
+                .filter_map(|f| f.shown.map(|shown| shown.per_s))
                 .collect(),
         ),
         (
@@ -436,13 +447,17 @@ fn frames_of(
 }
 
 /// The frame of the process `pid` that a displayed surface's label names,
-/// as `Surface 389 (ghostty (78543):Frame 1:Surface 439)`.
+/// as `Surface 389 (ghostty (78543):Frame 1:Surface 439)`, its number of
+/// the thousands' separators that the label writes, as `Frame 1'000`.
 fn frame_shown(label: &str, pid: libc::pid_t) -> Option<u64> {
     let mark = format!("({pid}):Frame ");
     let at = label.find(&mark)? + mark.len();
     let digits: String = label[at..]
         .chars()
-        .take_while(char::is_ascii_digit)
+        .take_while(|c| {
+            c.is_ascii_digit() || matches!(c, '\'' | ',' | '.' | '\u{2019}' | '\u{a0}' | '\u{202f}')
+        })
+        .filter(char::is_ascii_digit)
         .collect();
     digits.parse().ok()
 }
@@ -489,6 +504,7 @@ fn shown_of(surfaces: &Table, pid: libc::pid_t, span: (u64, u64), refresh: u64) 
         .sum();
     Some(Shown {
         share: (frames.len() as f64 / refreshes).min(1.0),
+        per_s: frames.len() as f64 / (span.1.saturating_sub(span.0) as f64 / 1e9),
         dropped,
     })
 }
@@ -498,6 +514,9 @@ fn shown_of(surfaces: &Table, pid: libc::pid_t, span: (u64, u64), refresh: u64) 
 struct Shown {
     /// The share of the refreshes that showed a new frame.
     share: f64,
+    /// The frames shown a second, which a display of a variable refresh
+    /// tells better than a share of a rate that it changes.
+    per_s: f64,
     /// The frames drawn but never shown.
     dropped: u64,
 }
@@ -638,6 +657,17 @@ mod tests {
                 12
             ),
             Some(40)
+        );
+        assert_eq!(
+            frame_shown(
+                "Surface 17 (lokyr (82502):Frame 1'227:Surface 517 cannot go direct)",
+                82502
+            ),
+            Some(1227)
+        );
+        assert_eq!(
+            frame_shown("Surface 17 (lokyr (5):Frame 12,345:Surface 9)", 5),
+            Some(12345)
         );
     }
 }
