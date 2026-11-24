@@ -142,6 +142,7 @@ fn run() -> Result<(), String> {
         &["sync", "flood"],
     )?;
     let (name, terminal) = cli::terminal(&args)?;
+    keys::may_post()?;
     let refresh_hz = Machine::this().refresh_hz;
     let sync = args.flag("sync");
     let flood = args.flag("flood");

@@ -44,3 +44,9 @@ rounds = 1
 tool = "scroll"
 args = ["--by", "pixels", "--seconds", "10"]
 rounds = 2
+
+[[run]]
+tool = "gpu"
+args = ["--workload", "scroll", "--seconds", "10", "--system"]
+rounds = 1
+sudo = true

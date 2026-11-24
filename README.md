@@ -126,7 +126,7 @@ Each round launches the terminal running `ttybench-payload`, which reads keys on
 - **A person at the Mac**: macOS counts ttybench's keys, clicks and scrolls as no one's activity, and would let the display sleep in the middle of a session, which leaves nothing to capture. ttybench tells macOS that someone is at the Mac every second while it measures, as a person's typing does; `--presence off` doesn't.
 - **Your Mac's state counts**: the same terminal can show a latency some milliseconds lower while you work on the Mac than while it rests. Measure every terminal of a comparison in the same state, and in one session.
 - **What the capture takes**: `--source window`, the default, takes the window alone, each frame as the window server takes the window's new content. `--source screen` takes the screen where the window lies, each frame as the window server composes it, a few milliseconds later, with whatever lies over the window. While ttybench captures a window, macOS shows its capture indicator in the place of the window's buttons, away from the typed row.
-- **Permissions**: the capture takes the Screen Recording permission, and the keys the Accessibility permission, of the app that runs ttybench, such as your terminal or your editor.
+- **Permissions**: the capture takes the Screen Recording permission, and the keys the Accessibility permission, of the app that runs ttybench, such as your terminal or your editor. Without the latter, macOS drops the keys and tells nothing, so ttybench stops before it measures.
 
 #### Beside Typometer
 
@@ -167,6 +167,30 @@ Each round launches the terminal running `ttybench-payload`, which prints 50 000
 - **The frames are those that the window server took**, as it took them. Which of them each refresh of the display showed is the display's own record: a terminal that draws in step with the display's refreshes gives frames a whole number of refreshes apart, one that draws at a pace of its own gives frames between them, of which a refresh shows the last.
 - **Leave the mouse and the trackpad alone**: the scroll goes through the window server to the window under the pointer, which ttybench moves to the window's middle.
 - **`--source` and `--presence`** are latency's.
+
+### gpu
+
+How much of the GPU a terminal uses: its processes' GPU time and WindowServer's, at rest or while it scrolls, and, of `--system`, the system's GPU.
+
+```sh
+ttybench gpu --terminal ghostty --workload rest --seconds 10
+ttybench gpu --terminal ghostty --workload scroll --seconds 10 --system
+```
+
+Each round launches the terminal running `ttybench-payload`, then reads the GPU over `--seconds` of rest, or of the same scroll as `ttybench scroll`'s (`--workload scroll`, `--by pixels|lines`).
+
+- **The processes' GPU time**, in milliseconds a second: the terminal's processes', and WindowServer's, which composes every window on the display, their translucency, blur and layers, and whose work is billed to it, not to the app that asked for it. It comes of the GPU's clients that IOKit lists, as Activity Monitor shows a process's GPU time, and takes no privilege. WindowServer's holds what every app on screen asks of it: measure with nothing else moving.
+- **`--system`** samples the system's GPU with `powermetrics` every `--interval` milliseconds, 250 by default: its power in milliwatts, the share of the time that it worked, and its frequency while it worked. It takes `sudo`, of credentials already given: run `sudo -v` first, or a session's run of `sudo = true`.
+- **The two agree**: the terminal's and WindowServer's GPU time make about the share of the time that the system's GPU worked, as the other apps ask little while you measure.
+
+Two terminals at 60 Hz, 10 seconds each, a display of nothing else moving:
+
+| Terminal | Workload | Its GPU time | WindowServer's | GPU power | GPU active |
+|---|---|---|---|---|---|
+| Ghostty 1.4.0 | rest | 1.73 ms/s | 2.27 ms/s | 1.9 mW | 1.0 % |
+| Ghostty 1.4.0 | scroll | 47.4 ms/s | 44.4 ms/s | 32.3 mW | 8.5 % |
+| kitty 0.51.0 | rest | 0.00 ms/s | 1.04 ms/s | 1.0 mW | 0.6 % |
+| kitty 0.51.0 | scroll | 56.2 ms/s | 48.6 ms/s | 41.1 mW | 10.0 % |
 
 ## License
 

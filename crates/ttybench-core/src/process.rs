@@ -49,7 +49,9 @@ pub fn wakeups(pid: libc::pid_t) -> io::Result<Wakeups> {
     })
 }
 
-/// The name of the process `pid`.
+/// The name of the process `pid`: its whole name, or, of a process of
+/// another user's, whose name the kernel refuses, as WindowServer's, the
+/// first 16 bytes of it of the short record.
 pub fn name(pid: libc::pid_t) -> io::Result<String> {
     let mut buffer = [0_u8; 256];
     let size = u32::try_from(buffer.len()).expect("the buffer is small");
@@ -57,10 +59,20 @@ pub fn name(pid: libc::pid_t) -> io::Result<String> {
     // at most that many.
     let length = unsafe { libc::proc_name(pid, buffer.as_mut_ptr().cast(), size) };
     let length = usize::try_from(length).unwrap_or(0);
-    if length == 0 {
-        return Err(io::Error::last_os_error());
+    if length > 0 {
+        return Ok(String::from_utf8_lossy(&buffer[..length]).into_owned());
     }
-    Ok(String::from_utf8_lossy(&buffer[..length]).into_owned())
+    let info = bsdinfo(pid)?;
+    let command: Vec<u8> = info
+        .pbsi_comm
+        .iter()
+        .take_while(|&&byte| byte != 0)
+        .map(|&byte| byte as u8)
+        .collect();
+    if command.is_empty() {
+        return Err(io::Error::other("a process of no name"));
+    }
+    Ok(String::from_utf8_lossy(&command).into_owned())
 }
 
 /// The processes that run the executable at `executable`.
@@ -223,6 +235,11 @@ fn bsdinfo(pid: libc::pid_t) -> io::Result<libc::proc_bsdshortinfo> {
 /// Asks the process `pid` to terminate, as `kill` does by default.
 pub fn terminate(pid: libc::pid_t) -> io::Result<()> {
     signal(pid, libc::SIGTERM)
+}
+
+/// Interrupts the process `pid`, as Control-C does.
+pub fn interrupt(pid: libc::pid_t) -> io::Result<()> {
+    signal(pid, libc::SIGINT)
 }
 
 /// Terminates the process `pid` without giving it a chance to refuse.
@@ -404,9 +421,10 @@ mod tests {
     }
 
     #[test]
-    fn a_process_of_root_tells_its_parent() {
+    fn a_process_of_root_tells_its_parent_and_its_name() {
         // launchd, root's, whose full record the kernel refuses to others.
         assert_eq!(parent(1).unwrap(), 0);
+        assert_eq!(name(1).unwrap(), "launchd");
     }
 
     #[test]

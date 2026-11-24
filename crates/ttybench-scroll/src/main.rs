@@ -35,13 +35,12 @@ use std::time::{Duration, Instant};
 
 use ttybench_core::capture::{Capture, Source};
 use ttybench_core::cli::{self, Args};
-use ttybench_core::clock::now_ns;
 use ttybench_core::config::Terminal;
 use ttybench_core::frames::{self, Frame, Rect};
-use ttybench_core::keys::{self, Scroll};
 use ttybench_core::payload::{self, Payload};
 use ttybench_core::presence::Presence;
 use ttybench_core::results::{self, Machine, Record, Session};
+use ttybench_core::scroll::{self as pattern, By, Pattern};
 use ttybench_core::{stats, terminal};
 
 /// How long a round waits for the terminal's window, its payload and its
@@ -55,18 +54,6 @@ const QUIT: Duration = Duration::from_secs(5);
 /// capture.
 const SETTLE: Duration = Duration::from_secs(2);
 
-/// The lines that the payload prints, and their width, which the window's
-/// columns hold.
-const LINES: &str = "50000";
-const WIDTH: &str = "60";
-
-/// The period of the scroll's pattern, up then down.
-const PERIOD: f64 = 2.0;
-
-/// How long before an event the scroll's thread stops sleeping and spins,
-/// past a sleep's usual lateness.
-const SPIN: Duration = Duration::from_micros(1500);
-
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -77,22 +64,10 @@ fn main() -> ExitCode {
     }
 }
 
-/// How the scroll comes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum By {
-    /// A trackpad's precise pixels, of phases and momentum.
-    Pixels,
-    /// A wheel's lines, a step at a time.
-    Lines,
-}
-
 /// A round's settings.
 #[derive(Clone, Copy, Debug)]
 struct Settings {
-    by: By,
-    seconds: f64,
-    rate: f64,
-    amplitude: f64,
+    pattern: Pattern,
     source: Source,
     presence: bool,
 }
@@ -124,22 +99,19 @@ fn run() -> Result<(), String> {
         &[],
     )?;
     let (name, terminal) = cli::terminal(&args)?;
+    ttybench_core::keys::may_post()?;
     let by = match args.value("by").unwrap_or("pixels") {
         "pixels" => By::Pixels,
         "lines" => By::Lines,
         other => return Err(format!("--by takes pixels or lines, not `{other}`")),
     };
     let settings = Settings {
-        by,
-        seconds: args.number("seconds", 10.0)?,
-        rate: args.number(
-            "rate",
-            match by {
-                By::Pixels => 120.0,
-                By::Lines => 20.0,
-            },
-        )?,
-        amplitude: args.number("amplitude", 200.0)?,
+        pattern: Pattern {
+            by,
+            seconds: args.number("seconds", 10.0)?,
+            rate: args.number("rate", by.rate())?,
+            amplitude: args.number("amplitude", 200.0)?,
+        },
         source: match args.value("source").unwrap_or("window") {
             "screen" => Source::Screen,
             "window" => Source::Window,
@@ -151,9 +123,10 @@ fn run() -> Result<(), String> {
             other => return Err(format!("--presence takes on or off, not `{other}`")),
         },
     };
-    if settings.seconds < PERIOD || settings.rate < 4.0 {
+    if settings.pattern.seconds < pattern::PERIOD || settings.pattern.rate < 4.0 {
         return Err(format!(
-            "--seconds takes {PERIOD} at least, and --rate 4 at least"
+            "--seconds takes {} at least, and --rate 4 at least",
+            pattern::PERIOD
         ));
     }
     let rounds: usize = args.number("rounds", 1)?;
@@ -184,15 +157,8 @@ fn run() -> Result<(), String> {
     let version = results::app_version(&terminal.app);
     let mut conditions = serde_json::Map::new();
     conditions.insert("rounds".into(), rounds.into());
-    conditions.insert(
-        "by".into(),
-        match settings.by {
-            By::Pixels => "pixels",
-            By::Lines => "lines",
-        }
-        .into(),
-    );
-    conditions.insert("seconds".into(), settings.seconds.into());
+    conditions.insert("by".into(), settings.pattern.by.name().into());
+    conditions.insert("seconds".into(), settings.pattern.seconds.into());
     conditions.insert("presence".into(), settings.presence.into());
     conditions.insert(
         "source".into(),
@@ -202,9 +168,9 @@ fn run() -> Result<(), String> {
         }
         .into(),
     );
-    conditions.insert("rate".into(), settings.rate.into());
-    if settings.by == By::Pixels {
-        conditions.insert("amplitude".into(), settings.amplitude.into());
+    conditions.insert("rate".into(), settings.pattern.rate.into());
+    if settings.pattern.by == By::Pixels {
+        conditions.insert("amplitude".into(), settings.pattern.amplitude.into());
     }
     if let Some(refresh) = Machine::this().refresh_hz {
         conditions.insert("refresh_hz".into(), refresh.into());
@@ -254,8 +220,8 @@ fn round(
     settings: Settings,
 ) -> Result<Figures, String> {
     let _presence = settings.presence.then(Presence::start);
-    let payload = Payload::new(binary, &["lines", "--count", LINES, "--width", WIDTH])
-        .map_err(|error| format!("the payload: {error}"))?;
+    let payload =
+        Payload::new(binary, &pattern::PAYLOAD).map_err(|error| format!("the payload: {error}"))?;
     let (launched, _) = terminal::launch_ready(name, terminal, &payload, home, TIMEOUT)?;
     let measured = payload
         .wait("done", TIMEOUT)
@@ -295,41 +261,16 @@ fn measure(
         window.frame.x + window.frame.width / 2.0,
         window.frame.y + window.frame.height / 2.0,
     );
-    keys::point(x, y);
-    thread::sleep(Duration::from_millis(100));
-    // Away from the scrollback's end first, so that the scroll down meets
-    // none.
-    for step in 0..12 {
-        keys::scroll(
-            x,
-            y,
-            Scroll::Pixels {
-                pixels: 170,
-                phase: if step == 0 { 1 } else { 2 },
-                momentum: 0,
-            },
-        );
-        thread::sleep(Duration::from_millis(8));
-    }
-    keys::scroll(
-        x,
-        y,
-        Scroll::Pixels {
-            pixels: 0,
-            phase: 4,
-            momentum: 0,
-        },
-    );
-    thread::sleep(Duration::from_secs(1));
+    pattern::away(x, y);
     let mut last = None;
     while let Some(frame) = capture.try_next() {
         last = Some(frame);
     }
-    let events = plan(settings);
-    let tick = Duration::from_secs_f64(1.0 / settings.rate);
+    let events = pattern::plan(settings.pattern);
+    let tick = settings.pattern.tick();
     let (done, ended) = mpsc::channel();
     let scroller = thread::spawn(move || {
-        let span = post(x, y, &events, tick);
+        let span = pattern::post(x, y, &events, tick);
         let _ = done.send(());
         span
     });
@@ -369,89 +310,6 @@ fn measure(
     figures(&shown, start, end).ok_or_else(|| format!("{name} showed no frame of the scroll"))
 }
 
-/// The scroll's events, in their order, `rate` a second, as `settings`
-/// says.
-fn plan(settings: Settings) -> Vec<Scroll> {
-    let periods = (settings.seconds / PERIOD).round().max(1.0) as usize;
-    let mut events = Vec::new();
-    match settings.by {
-        By::Pixels => {
-            let per = (PERIOD / 4.0 * settings.rate).round().max(2.0) as usize;
-            let fingers = settings.amplitude / per as f64;
-            for _ in 0..periods {
-                for sign in [1.0, -1.0] {
-                    for step in 0..per {
-                        events.push(Scroll::Pixels {
-                            pixels: (sign * fingers).round() as i32,
-                            phase: if step == 0 { 1 } else { 2 },
-                            momentum: 0,
-                        });
-                    }
-                    events.push(Scroll::Pixels {
-                        pixels: 0,
-                        phase: 4,
-                        momentum: 0,
-                    });
-                    for step in 0..per {
-                        let left = 1.0 - step as f64 / per as f64;
-                        // Down to a pixel an event, never none, so that the
-                        // view moves throughout.
-                        let pixels = (sign * (fingers * left * left).round().max(1.0)) as i32;
-                        let momentum = match step {
-                            0 => 1,
-                            _ if step + 1 == per => 3,
-                            _ => 2,
-                        };
-                        events.push(Scroll::Pixels {
-                            pixels,
-                            phase: 0,
-                            momentum,
-                        });
-                    }
-                }
-            }
-        }
-        By::Lines => {
-            let per = (PERIOD / 2.0 * settings.rate).round().max(1.0) as usize;
-            for _ in 0..periods {
-                for sign in [1, -1] {
-                    events.extend(std::iter::repeat_n(Scroll::Lines(sign), per));
-                }
-            }
-        }
-    }
-    events
-}
-
-/// Posts `events` at `x`, `y`, `tick` apart, on time as a trackpad's come:
-/// the thread of the interactive class, which the system's timers do not
-/// coalesce, asleep until a moment before each event, then spinning to it.
-/// The span of the scroll, from its first event to a tick past its last,
-/// in nanoseconds of the shared clock.
-fn post(x: f64, y: f64, events: &[Scroll], tick: Duration) -> (u64, u64) {
-    // SAFETY: a call on the calling thread, of a class of the system's.
-    unsafe {
-        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0);
-    }
-    let origin = Instant::now();
-    let start = now_ns();
-    for (at, &event) in events.iter().enumerate() {
-        let due = origin + tick.mul_f64(at as f64);
-        if let Some(wait) = due
-            .checked_duration_since(Instant::now())
-            .and_then(|wait| wait.checked_sub(SPIN))
-        {
-            thread::sleep(wait);
-        }
-        while Instant::now() < due {
-            std::hint::spin_loop();
-        }
-        keys::scroll(x, y, event);
-    }
-    let end = start + u64::try_from(tick.mul_f64(events.len() as f64).as_nanos()).unwrap_or(0);
-    (start, end)
-}
-
 /// The figures of frames taken at `shown`, of the scroll's span from
 /// `start` to `end`: the frames within it a second, and the gaps between
 /// them; none of no frame.
@@ -477,70 +335,6 @@ fn figures(shown: &[u64], start: u64, end: u64) -> Option<Figures> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn settings(by: By) -> Settings {
-        Settings {
-            by,
-            seconds: 4.0,
-            rate: 120.0,
-            amplitude: 200.0,
-            source: Source::Screen,
-            presence: true,
-        }
-    }
-
-    #[test]
-    fn a_trackpads_scroll_swipes_lets_its_momentum_slow_and_comes_back() {
-        let events = plan(settings(By::Pixels));
-        // Two periods, each of two swipes of 60 events and their end, and
-        // two momentums of 60.
-        assert_eq!(events.len(), 2 * 2 * (60 + 1 + 60));
-        let sum: i32 = events
-            .iter()
-            .map(|event| match event {
-                Scroll::Pixels { pixels, .. } => *pixels,
-                Scroll::Lines(_) => 0,
-            })
-            .sum();
-        assert_eq!(sum, 0);
-        assert_eq!(
-            events[0],
-            Scroll::Pixels {
-                pixels: 3,
-                phase: 1,
-                momentum: 0
-            }
-        );
-        assert_eq!(
-            events[60],
-            Scroll::Pixels {
-                pixels: 0,
-                phase: 4,
-                momentum: 0
-            }
-        );
-        assert!(matches!(events[61], Scroll::Pixels { momentum: 1, .. }));
-        // The momentum slows to a pixel, never none.
-        assert!(matches!(
-            events[120],
-            Scroll::Pixels {
-                pixels: 1,
-                momentum: 3,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn a_wheels_scroll_steps_up_then_down() {
-        let events = plan(Settings {
-            rate: 20.0,
-            ..settings(By::Lines)
-        });
-        assert_eq!(events.len(), 2 * 2 * 20);
-        assert_eq!(events[19], Scroll::Lines(1));
-        assert_eq!(events[20], Scroll::Lines(-1));
-    }
 
     #[test]
     fn the_frames_of_a_span_count_a_second_and_their_gaps() {

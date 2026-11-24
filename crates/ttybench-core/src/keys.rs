@@ -12,10 +12,25 @@ use std::time::Duration;
 use objc2_core_foundation::CGPoint;
 use objc2_core_graphics::{
     CGEvent, CGEventField, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton,
-    CGScrollEventUnit,
+    CGPreflightPostEventAccess, CGScrollEventUnit,
 };
 
 use crate::config::Key;
+
+/// Whether the tool may post events: of the Accessibility permission of
+/// the app that runs it, without which macOS drops them, telling nothing;
+/// why not otherwise.
+pub fn may_post() -> Result<(), String> {
+    if CGPreflightPostEventAccess() {
+        Ok(())
+    } else {
+        Err(
+            "posting keys, clicks and scrolls takes the Accessibility permission of the app \
+             that runs the tool, in System Settings › Privacy & Security › Accessibility"
+                .into(),
+        )
+    }
+}
 
 /// The pause after each key's press and release, as a hand's, for the
 /// terminal to take it.

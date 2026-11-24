@@ -1,0 +1,15 @@
+[package]
+name = "ttybench-gpu"
+description = "How much of the GPU a terminal uses: its processes' GPU time and WindowServer's, at rest or while it scrolls, and the system's GPU power, frequency and activity."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+ttybench-core.workspace = true
+
+[lints]
+workspace = true
