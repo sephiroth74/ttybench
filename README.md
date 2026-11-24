@@ -23,7 +23,7 @@ app = "/Applications/iTerm.app"
 launch = "open"
 ```
 
-- `launch` is the program and its arguments, with `{app}` for the bundle, `{command}` for the script that ttybench runs in the terminal, and `{cwd}` for the folder it starts in. A terminal that takes no command on its command line, such as Terminal.app or iTerm2, uses `"open"`: ttybench opens a `.command` script with the app.
+- `launch` is the program and its arguments, with `{app}` for the bundle, `{command}` for the script that ttybench runs in the terminal, and `{cwd}` for the folder it starts in. A terminal that takes no command on its command line, such as Terminal.app, iTerm2 or Warp, uses `"open"`: ttybench opens a `.command` script with the app.
 - `env` gives the terminal more environment variables, such as the folder of a config made for the benchmarks.
 - Give every terminal the same font, font size and window size, so that their figures compare.
 

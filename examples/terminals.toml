@@ -24,9 +24,9 @@ launch = ["{app}/Contents/MacOS/alacritty", "-e", "{command}"]
 app = "/Applications/kitty.app"
 launch = ["{app}/Contents/MacOS/kitty", "{command}"]
 
-[terminals.wezterm]
-app = "/Applications/WezTerm.app"
-launch = ["{app}/Contents/MacOS/wezterm-gui", "start", "--", "{command}"]
+[terminals.warp]
+app = "/Applications/Warp.app"
+launch = "open"
 
 [terminals.iterm2]
 app = "/Applications/iTerm.app"

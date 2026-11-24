@@ -355,7 +355,7 @@ mod tests {
                 "kitty",
                 "lokyr",
                 "terminal",
-                "wezterm"
+                "warp"
             ]
         );
         assert_eq!(read.terminals["iterm2"].launch, Launch::Open);
