@@ -192,15 +192,11 @@ fn of_its_own_echo_it_echoes_its_keys_in_raw_mode() {
 }
 
 #[test]
-fn of_a_line_its_keys_go_on_the_middle_row_cleared_after_each_line() {
+fn of_a_line_its_keys_go_on_the_first_row_cleared_after_each_line() {
     let mut run = run("keys-line", &["keys", "--count", "5", "--line", "2"]);
     assert_eq!(run.event()["event"], "ready");
-    // The screen cleared and the cursor on the middle row of 30.
-    assert!(
-        printed_within(&run, "\x1b[H\x1b[2J\x1b[15;1H"),
-        "{:?}",
-        run.printed()
-    );
+    // The screen cleared, the cursor at its top left.
+    assert!(printed_within(&run, "\x1b[H\x1b[2J"), "{:?}", run.printed());
     for key in b"abcde" {
         run.master.write_all(&[*key]).unwrap();
         assert_eq!(run.event()["byte"].as_u64(), Some(u64::from(*key)));

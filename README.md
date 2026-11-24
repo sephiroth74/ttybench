@@ -107,7 +107,7 @@ ttybench latency --terminal ghostty --keys 200 --spacing 150
 ttybench latency --terminal ghostty --keys 200 --flood
 ```
 
-Each round launches the terminal running `ttybench-payload`, which reads keys on an empty row of the window's middle that the terminal echoes them on, as `cat` does at a prompt, and clears it every 40 keys. ttybench captures the terminal's window with ScreenCaptureKit, strikes a few letters slowly to find the row and its cells, then strikes `--keys` letters, `--spacing` milliseconds apart. A key's latency ends at the first frame that shows its row changed, at the time the window server displayed that frame, so that the capture's own delay doesn't count.
+Each round launches the terminal running `ttybench-payload`, which reads keys on the first row of a cleared screen that the terminal echoes them on, as `cat` does at a prompt, and clears it every 40 keys. ttybench captures the terminal's window with ScreenCaptureKit, strikes a few keys slowly to find the row and its cells, then strikes `.` `--keys` times, `--spacing` milliseconds apart, as Typometer strikes it. A key's latency ends at the first frame that shows its row changed, at the time the window server took that frame, so that the capture's own delay doesn't count.
 
 - **Every phase of the refresh**: a frame shows at the display's next refresh after the terminal draws it, so a key's latency depends on when, within a refresh, the key comes. ttybench adds a random share of a refresh to each spacing, so that the keys fall at every phase alike and the figures hold the whole range. `--sync` strikes each key a spacing after the frame of the last one's character instead, as Typometer's synchronous mode does: with a spacing of whole refreshes, as 150 ms is at 60 and 120 Hz, every key comes at the same phase, and the figures hold that phase alone.
 - **Beside a flood**: `--flood` opens a pane beside the measured one with the terminal's `beside` keys, runs `yes` in it, and measures the keys while it prints. Describe `beside` in your terminals' file: the keys that open the pane and give it the keyboard, and the keys that give the keyboard back to the measured pane, or where to click in it, as shares of the window from its top left:
@@ -122,27 +122,35 @@ Each round launches the terminal running `ttybench-payload`, which reads keys on
 
   ttybench sends a shortcut's character with its key, so that an app that matches its shortcuts by their characters, as a menu does, finds them whatever your keyboard's layout. An app that reads the key's place on your layout may not: give it a click.
 - **The cursor must not blink**: ttybench watches the row for a second before the keys, and stops when it changes of its own.
-- **Where the keys go**: `--to process`, the default, sends them to the terminal's process alone, whichever app is in front. `--to system` sends them through the window server, as a keyboard does, to the app in front, which the terminal is as it launches; leave the Mac alone meanwhile. A click always goes through the window server.
+- **Where the keys go**: `--to process`, the default, sends them to the terminal's process alone, whichever app is in front. `--to system` sends them through the window server, as a keyboard does, to the app in front, which the terminal is as it launches. A click always goes through the window server: leave the Mac alone meanwhile.
+- **A person at the Mac**: macOS counts ttybench's keys, clicks and scrolls as no one's activity, and would let the display sleep in the middle of a session, which leaves nothing to capture. ttybench tells macOS that someone is at the Mac every second while it measures, as a person's typing does; `--presence off` doesn't.
 - **Your Mac's state counts**: the same terminal can show a latency some milliseconds lower while you work on the Mac than while it rests. Measure every terminal of a comparison in the same state, and in one session.
+- **What the capture takes**: `--source window`, the default, takes the window alone, each frame as the window server takes the window's new content. `--source screen` takes the screen where the window lies, each frame as the window server composes it, a few milliseconds later, with whatever lies over the window. While ttybench captures a window, macOS shows its capture indicator in the place of the window's buttons, away from the typed row.
 - **Permissions**: the capture takes the Screen Recording permission, and the keys the Accessibility permission, of the app that runs ttybench, such as your terminal or your editor.
 
 #### Beside Typometer
 
-Typometer 1.1.0 and ttybench measured two terminals in one session, on a MacBook Pro's built-in display at 120 Hz, the Mac left alone, each terminal of Menlo at 13 points in 120 by 40 cells and a cursor that doesn't blink: 200 keys 150 ms apart, Typometer in its synchronous mode, ttybench of one phase (`--sync`) and of every phase, alone and beside a pane of `yes`. The median and the 95th percentile, by the nearest rank, in milliseconds:
+Typometer 1.1.0 measures a key's latency from the screen with Java's Robot, on macOS:
 
-| Terminal | Beside | Typometer | ttybench `--sync` | ttybench |
-|---|---|---|---|---|
-| Ghostty 1.4.0 | nothing | 24.9 · 30.2 | 22.8 · 28.4 | 23.8 · 28.2 |
-| Ghostty 1.4.0 | a flood | 19.0 · 35.5 | 23.2 · 25.7 | 22.0 · 27.9 |
-| kitty 0.51.0 | nothing | 25.8 · 28.5 | 16.2 · 21.6 | 15.8 · 21.2 |
-| kitty 0.51.0 | a flood | no figures | 79.5 · 246.0 | 115.3 · 279.8 |
+- **It reads one pixel at a time**, where the next character's `.` goes, or, of a block cursor, where the cursor goes next, again and again until it changes. Each read takes about a refresh, 18 ms at 60 Hz, so it sees a change once a refresh at most, and keeps a processor's core busy meanwhile.
+- **Its synchronous mode** strikes the next key 150 ms after it saw the last character: whole refreshes at 60 and 120 Hz, so every key comes at about the same phase of the refresh, and its figures hold that phase alone, which may lie a refresh from another's. **Its asynchronous mode** strikes keys at a steady pace: of a delay of no whole refreshes, as 153 ms, they fall at every phase, as ttybench's do.
+- **Its native API** is Windows' and Linux's: on macOS it reads through Robot either way.
 
-ttybench's medians for Ghostty lie within a refresh, 8.3 ms at 120 Hz, of Typometer's: 1 to 2 ms below it alone, 3 to 4 ms above it beside a flood. For kitty they lie 10 ms below it, more than a refresh. They differ for these reasons:
+Both measured two terminals in one session, on a display at 60 Hz, the Mac left alone, each terminal of Menlo at 13 points in 120 by 40 cells and a cursor that doesn't blink, 200 keys each: Typometer's asynchronous mode at 153 ms beside ttybench's every phase, its synchronous mode at 150 ms beside `--sync`, and both beside a pane of `yes`. The median and the 95th percentile, by the nearest rank, in milliseconds:
 
-- **Where a measure ends**: ttybench ends at the time the window server displayed the frame; Typometer ends when its own capture of the screen, taken again and again, sees the change, which comes after it.
-- **The refresh**: no measure of the screen sees a change before the display's next refresh shows it. Typometer's next key comes 150 ms after it saw the last character, 18 refreshes at 120 Hz, so every key comes at about the same phase of the refresh, and its figures hold that phase alone, which can lie below or above the average of every phase. ttybench's keys fall at every phase, unless `--sync`.
-- **kitty's 10 ms**: the frame that ttybench times for each key shows the character drawn in its cell, and `--sync` gives what every phase gives, so neither a frame taken too early nor the phase tells the difference, which is not explained yet.
-- **Beside a flood**, Typometer found no figures for kitty, as it took the flooding pane's changes for a cursor.
+| Terminal | Measure | Typometer | ttybench |
+|---|---|---|---|
+| Ghostty 1.4.0 | every phase | 19.6 · 27.1 | 20.2 · 37.4 |
+| Ghostty 1.4.0 | one phase | 24.9 · 30.6 | 16.1 · 34.3 |
+| Ghostty 1.4.0 | beside a flood | 32.6 · 42.0 | 32.2 · 38.8 |
+| kitty 0.51.0 | every phase | 20.3 · 26.7 | 18.9 · 28.2 |
+| kitty 0.51.0 | one phase | 23.9 · 30.9 | 16.1 · 18.3 |
+| kitty 0.51.0 | beside a flood | 163.1 · 287.1 | 99.1 · 304.2 |
+
+- **Of every phase**, the medians lie within 1.5 ms of each other: both measure the same.
+- **Of one phase**, they lie 8 to 9 ms apart, within a refresh of 16.7 ms: each holds a phase of its own, which no setting of either chooses.
+- **Beside a flood**, Ghostty draws without a pause, and the phase matters little: within half a millisecond. kitty's latency beside a flood depends on how much of the flood it has still to take, and spreads from 16 to 520 ms: the medians of 200 keys lie 64 ms apart, the 95th percentiles 17.
+- ttybench then struck letters on the window's middle row; it strikes `.` on the first row since, which a check of Ghostty's every phase measured 2.5 ms below Typometer's.
 
 ## License
 

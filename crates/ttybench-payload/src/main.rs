@@ -16,8 +16,9 @@
 //! `keys` reads `count` keys, 1 by default, 0 for as many as come. The
 //! terminal's line discipline echoes each, as it does to `cat` at a
 //! prompt, or, of `--echo payload`, the payload does, in raw mode. Of
-//! `--line`, the keys go on an empty row in the screen's middle, cleared
-//! after every `line` keys, so that they never scroll.
+//! `--line`, the keys go on the first row of a cleared screen, as at a
+//! terminal's start, cleared after every `line` keys, so that they never
+//! wrap nor scroll.
 
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -74,7 +75,7 @@ fn main() -> ExitCode {
         "rows": rows,
         "time_ns": now_ns(),
     }));
-    let done = match run(&options.workload, rows, &mut events) {
+    let done = match run(&options.workload, &mut events) {
         Ok(done) => done,
         Err(error) => {
             events.tell(
@@ -170,9 +171,8 @@ fn parse(args: Vec<String>) -> Result<Options, String> {
     })
 }
 
-/// Runs `workload` in a terminal of `rows` rows, telling its keys through
-/// `events`: its end's record.
-fn run(workload: &Workload, rows: u16, events: &mut Events) -> io::Result<Value> {
+/// Runs `workload`, telling its keys through `events`: its end's record.
+fn run(workload: &Workload, events: &mut Events) -> io::Result<Value> {
     let mut out = io::stdout().lock();
     match workload {
         Workload::Rest { seconds } => {
@@ -219,7 +219,7 @@ fn run(workload: &Workload, rows: u16, events: &mut Events) -> io::Result<Value>
         Workload::Keys { count, echo, line } => {
             let _mode = Mode::enter(*echo)?;
             if *line > 0 {
-                write!(out, "\x1b[H\x1b[2J\x1b[{};1H", (rows / 2).max(1))?;
+                out.write_all(b"\x1b[H\x1b[2J")?;
                 out.flush()?;
             }
             let mut input = io::stdin().lock();

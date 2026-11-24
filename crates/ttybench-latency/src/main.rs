@@ -1,8 +1,9 @@
 //! `ttybench-latency`: how fast a terminal shows a typed key. Each round
-//! launches the terminal running the payload, which reads keys on an empty
-//! row that the terminal's line discipline echoes them on, as `cat` at a
-//! prompt; captures the terminal's window; finds the typed line of a few
-//! keys; then strikes letters a spacing apart, and measures, from each
+//! launches the terminal running the payload, which reads keys on the first
+//! row of a cleared screen, which the terminal's line discipline echoes, as
+//! `cat` at a prompt; captures the terminal's window; finds the typed line
+//! of a few keys; then strikes `.`, as Typometer does, a spacing
+//! apart, and measures, from each
 //! key's press to the first frame that the window server displayed of the
 //! line changed, the key's latency.
 //!
@@ -34,12 +35,13 @@ use std::process::ExitCode;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ttybench_core::capture::Capture;
+use ttybench_core::capture::{Capture, Source};
 use ttybench_core::cli::{self, Args};
 use ttybench_core::config::Terminal;
 use ttybench_core::frames::{self, Frame, Line, Watch};
 use ttybench_core::keys::{self, To};
 use ttybench_core::payload::{self, Payload};
+use ttybench_core::presence::Presence;
 use ttybench_core::results::{self, Machine, Record, Session};
 use ttybench_core::{stats, terminal};
 
@@ -71,9 +73,10 @@ const ECHO: Duration = Duration::from_secs(1);
 /// for the frames that follow it, as a cursor's slide.
 const AFTER: Duration = Duration::from_millis(30);
 
-/// The letters struck in turn, which every layout of Latin letters types
-/// as letters, whichever its keys.
-const LETTERS: &str = "fjdkslaghrueiwoqptyznvmcbx";
+/// The character struck at every key, as Typometer strikes it, so that no
+/// key measured draws a glyph for the first time: the key of `.` on the US
+/// layout, which types `.` on most layouts, as Typometer's key does.
+const LETTER: &str = ".";
 
 /// How long the pane beside takes to start its shell, at most.
 const BESIDE: Duration = Duration::from_millis(1500);
@@ -107,6 +110,8 @@ struct Settings {
     sync: bool,
     flood: bool,
     target: Target,
+    source: Source,
+    presence: bool,
 }
 
 /// A round's measures: each key's latency, in milliseconds, the keys
@@ -131,6 +136,8 @@ fn run() -> Result<(), String> {
             "rounds",
             "pause",
             "session",
+            "source",
+            "presence",
         ],
         &["sync", "flood"],
     )?;
@@ -153,6 +160,8 @@ fn run() -> Result<(), String> {
         },
         sync,
         flood,
+        source: source(&args)?,
+        presence: presence(&args)?,
         target: match args.value("to").unwrap_or("process") {
             "process" => Target::Process,
             "system" => Target::System,
@@ -216,6 +225,15 @@ fn run() -> Result<(), String> {
         if settings.flood { "flood" } else { "rest" }.into(),
     );
     conditions.insert("echo".into(), "tty".into());
+    conditions.insert("presence".into(), settings.presence.into());
+    conditions.insert(
+        "source".into(),
+        match settings.source {
+            Source::Screen => "screen",
+            Source::Window => "window",
+        }
+        .into(),
+    );
     conditions.insert("cols".into(), grid.0.into());
     conditions.insert("rows".into(), grid.1.into());
     if let Some(refresh) = refresh_hz {
@@ -264,6 +282,7 @@ fn round(
     home: &std::path::Path,
     settings: &Settings,
 ) -> Result<Round, String> {
+    let _presence = settings.presence.then(Presence::start);
     let line = LINE.to_string();
     let payload = Payload::new(binary, &["keys", "--count", "0", "--line", &line])
         .map_err(|error| format!("the payload: {error}"))?;
@@ -309,11 +328,10 @@ fn measure(
         (Some(beside), true) => Some(Flood::open(launched, window.pid, beside)?),
         _ => None,
     };
-    let capture = Capture::start(window.id)?;
-    let mut typed = 0;
+    let capture = Capture::start(window.id, settings.source)?;
     let mut last = capture.next(Duration::from_secs(2));
     last = gather(&capture, last, Instant::now() + Duration::from_millis(200));
-    let line = find_line(name, &capture, to, &mut typed, &mut last)?;
+    let line = find_line(name, &capture, to, &mut last)?;
     if let Some(flood) = &flood {
         flood.start(name, launched)?;
     }
@@ -336,8 +354,7 @@ fn measure(
     for _ in 0..settings.keys {
         last = gather(&capture, last, next);
         let struck = Instant::now();
-        let key_ns = keys::strike(to, letter(typed));
-        typed += 1;
+        let key_ns = keys::strike(to, letter());
         let mut watch = Watch::new(key_ns, line.band, last.take());
         let deadline = Instant::now() + ECHO;
         let mut shown = None;
@@ -486,11 +503,28 @@ impl Random {
     }
 }
 
-/// The key of the letter struck `typed`-th.
-fn letter(typed: usize) -> u16 {
-    let letters = LETTERS.as_bytes();
-    let letter = char::from(letters[typed % letters.len()]);
-    keys::code(&letter.to_string()).map_or(0, |(code, _)| code)
+/// Whether the user is declared active while the tool measures, as
+/// `--presence` says: on by default.
+fn presence(args: &Args) -> Result<bool, String> {
+    match args.value("presence").unwrap_or("on") {
+        "on" => Ok(true),
+        "off" => Ok(false),
+        other => Err(format!("--presence takes on or off, not `{other}`")),
+    }
+}
+
+/// The capture's source, as `--source` says: the window by default.
+fn source(args: &Args) -> Result<Source, String> {
+    match args.value("source").unwrap_or("window") {
+        "screen" => Ok(Source::Screen),
+        "window" => Ok(Source::Window),
+        other => Err(format!("--source takes screen or window, not `{other}`")),
+    }
+}
+
+/// The key of the letter struck.
+fn letter() -> u16 {
+    keys::code(LETTER).map_or(0, |(code, _)| code)
 }
 
 /// The frames that come until `until`, the last of them, or `last` of
@@ -514,7 +548,6 @@ fn find_line(
     name: &str,
     capture: &Capture,
     to: To,
-    typed: &mut usize,
     last: &mut Option<Frame>,
 ) -> Result<Line, String> {
     let mut boxes = Vec::with_capacity(FINDING);
@@ -523,8 +556,7 @@ fn find_line(
             .clone()
             .ok_or("the capture gave no frame of the window")?;
         let struck = Instant::now();
-        keys::strike(to, letter(*typed));
-        *typed += 1;
+        keys::strike(to, letter());
         *last = gather(capture, last.take(), struck + FINDING_SPACING);
         let after = last.as_ref().unwrap_or(&before);
         match frames::changed_box(&before, after, None) {
@@ -567,12 +599,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_letter_struck_has_its_own_key() {
-        let mut codes: Vec<u16> = (0..LETTERS.len()).map(letter).collect();
-        assert_eq!(letter(LETTERS.len()), letter(0));
-        codes.sort_unstable();
-        codes.dedup();
-        assert_eq!(codes.len(), 26);
+    fn the_character_struck_has_its_key() {
+        assert_eq!(letter(), 0x2F);
     }
 
     #[test]

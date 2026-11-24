@@ -9,6 +9,7 @@ pub mod config;
 pub mod frames;
 pub mod keys;
 pub mod payload;
+pub mod presence;
 pub mod process;
 pub mod results;
 pub mod stats;

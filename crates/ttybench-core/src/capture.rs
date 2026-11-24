@@ -2,6 +2,11 @@
 //! window server displays them, each of its display time and of its
 //! pixels, the whole window or a band of it, as a tool asks.
 //!
+//! Its source is the window alone, whatever lies over it, each frame as the
+//! window server takes the window's new content; or the screen where the
+//! window lies, each frame as the window server composes the display, what
+//! the display then shows, the window in front.
+//!
 //! The capture takes the Screen Recording permission of the app that runs
 //! the tool, as macOS grants it to the terminal or the editor that runs a
 //! command-line tool: System Settings › Privacy & Security › Screen &
@@ -17,6 +22,7 @@ use objc2::rc::Retained;
 use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{AllocAnyThread, DefinedClass, define_class, msg_send};
 use objc2_core_foundation::{CFDictionary, CFNumber, CFString, CFType};
+use objc2_core_foundation::{CGPoint, CGRect};
 use objc2_core_media::{CMSampleBuffer, CMTime};
 use objc2_core_video::{
     CVPixelBuffer, CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow,
@@ -24,9 +30,9 @@ use objc2_core_video::{
     CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress, kCVPixelFormatType_32BGRA,
     kCVReturnSuccess,
 };
-use objc2_foundation::{NSError, NSString};
+use objc2_foundation::{NSArray, NSError, NSString};
 use objc2_screen_capture_kit::{
-    SCContentFilter, SCFrameStatus, SCShareableContent, SCStream, SCStreamConfiguration,
+    SCContentFilter, SCDisplay, SCFrameStatus, SCShareableContent, SCStream, SCStreamConfiguration,
     SCStreamFrameInfoDisplayTime, SCStreamFrameInfoStatus, SCStreamOutput, SCStreamOutputType,
     SCWindow,
 };
@@ -201,6 +207,17 @@ fn text(error: *mut NSError) -> String {
     )
 }
 
+/// What a capture takes its frames of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// The window alone, each frame as the window server takes the
+    /// window's new content.
+    Window,
+    /// The screen where the window lies, each frame as the window server
+    /// composes the display, as the display shows it.
+    Screen,
+}
+
 /// A window's capture under way.
 pub struct Capture {
     stream: Retained<SCStream>,
@@ -226,16 +243,46 @@ impl std::fmt::Debug for Capture {
 
 impl Capture {
     /// Starts the capture of the window numbered `window`, as the window
-    /// server lists it, of its pixels, as many as its display has; why not
-    /// otherwise.
-    pub fn start(window: u32) -> Result<Self, String> {
-        let window = find(window)?;
-        // SAFETY: a filter of a window that ScreenCaptureKit listed.
-        let filter = unsafe {
-            SCContentFilter::initWithDesktopIndependentWindow(SCContentFilter::alloc(), &window.0)
+    /// server lists it, of `source`, of its pixels, as many as its display
+    /// has; why not otherwise.
+    pub fn start(window: u32, source: Source) -> Result<Self, String> {
+        let (window, display) = find(window)?;
+        let (filter, area) = match source {
+            Source::Window => {
+                // SAFETY: a filter of a window that ScreenCaptureKit listed.
+                let filter = unsafe {
+                    SCContentFilter::initWithDesktopIndependentWindow(
+                        SCContentFilter::alloc(),
+                        &window.0,
+                    )
+                };
+                (filter, None)
+            }
+            Source::Screen => {
+                // SAFETY: a filter of a display that ScreenCaptureKit listed,
+                // of no window left out; plain reads of the frames.
+                let (filter, frame, origin) = unsafe {
+                    let filter = SCContentFilter::initWithDisplay_excludingWindows(
+                        SCContentFilter::alloc(),
+                        &display.0,
+                        &NSArray::new(),
+                    );
+                    (filter, window.0.frame(), display.0.frame().origin)
+                };
+                // The window's frame on its display.
+                let area = CGRect {
+                    origin: CGPoint {
+                        x: frame.origin.x - origin.x,
+                        y: frame.origin.y - origin.y,
+                    },
+                    size: frame.size,
+                };
+                (filter, Some(area))
+            }
         };
-        // SAFETY: plain reads of the filter's description of the window.
+        // SAFETY: plain reads of the filter's description of its content.
         let (scale, rect) = unsafe { (f64::from(filter.pointPixelScale()), filter.contentRect()) };
+        let rect = area.unwrap_or(rect);
         let size = (
             (rect.size.width * scale).round() as usize,
             (rect.size.height * scale).round() as usize,
@@ -252,7 +299,11 @@ impl Capture {
             configuration.setShowsCursor(false);
             configuration.setScalesToFit(false);
             configuration.setIgnoreShadowsSingleWindow(true);
-            // Every frame that the display shows, at 240 Hz at most.
+            if let Some(area) = area {
+                configuration.setSourceRect(area);
+            }
+            // Frames as often as 240 a second, past the displays' rates;
+            // a shorter interval, or none, measured the same.
             configuration.setMinimumFrameInterval(CMTime::new(1, 240));
             configuration.setQueueDepth(8);
             configuration
@@ -360,8 +411,12 @@ impl Drop for Capture {
     }
 }
 
-/// ScreenCaptureKit's window numbered `id`, of the windows on screen.
-fn find(id: u32) -> Result<Handed<Retained<SCWindow>>, String> {
+/// A window that ScreenCaptureKit listed, and the display that holds it.
+type Found = (Handed<Retained<SCWindow>>, Handed<Retained<SCDisplay>>);
+
+/// ScreenCaptureKit's window numbered `id`, of the windows on screen, and
+/// the display that holds its middle, or the first of none.
+fn find(id: u32) -> Result<Found, String> {
     let (sender, content) = mpsc::channel();
     let handler = RcBlock::new(
         move |content: *mut SCShareableContent, error: *mut NSError| {
@@ -388,12 +443,31 @@ fn find(id: u32) -> Result<Handed<Retained<SCWindow>>, String> {
         }
         Err(_) => return Err("the screen's content did not come within 10 s".into()),
     };
-    // SAFETY: plain reads of the content's windows.
-    let windows = unsafe { content.windows() };
-    windows
+    // SAFETY: plain reads of the content's windows and displays.
+    let (windows, displays) = unsafe { (content.windows(), content.displays()) };
+    let window = windows
         .iter()
         // SAFETY: a plain read of a window's number.
         .find(|window| unsafe { window.windowID() } == id)
-        .map(Handed)
-        .ok_or_else(|| format!("the window {id} is not on screen to capture"))
+        .ok_or_else(|| format!("the window {id} is not on screen to capture"))?;
+    // SAFETY: plain reads of the frames.
+    let frame = unsafe { window.frame() };
+    let middle = (
+        frame.origin.x + frame.size.width / 2.0,
+        frame.origin.y + frame.size.height / 2.0,
+    );
+    let holds = |display: &SCDisplay| {
+        // SAFETY: a plain read of a display's frame.
+        let place = unsafe { display.frame() };
+        middle.0 >= place.origin.x
+            && middle.0 < place.origin.x + place.size.width
+            && middle.1 >= place.origin.y
+            && middle.1 < place.origin.y + place.size.height
+    };
+    let display = displays
+        .iter()
+        .find(|display| holds(display))
+        .or_else(|| displays.iter().next())
+        .ok_or("no display is on to capture")?;
+    Ok((Handed(window), Handed(display)))
 }
