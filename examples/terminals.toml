@@ -9,13 +9,21 @@
 #
 # env: what its environment gets beside ttybench's, as the folder of a
 # config of the session's, the same font, size and window for every
-# terminal, so that their measures compare.
+# terminal, so that their measures compare: copy examples/configs to
+# ~/ttybench/configs, which XDG_CONFIG_HOME points the terminals that read
+# it at. Terminal.app, iTerm2 and Warp read no such folder: give their
+# profiles the same font, size and window by hand.
 #
 # beside: for the measures beside a pane that floods, the keys that open
 # a pane beside the measured one and give it the keyboard (open), and the
 # keys that give the keyboard back to the measured pane (back), or where
 # to click in it (click), as shares of the window's width and height from
 # its top left. A key's character is the US layout's.
+#
+# quit: how it quits once measured: "signal", the default, a SIGTERM to
+# its processes, or "app", its own quit, as its menu's, for a terminal
+# that keeps state or asks before it quits; a SIGKILL past a deadline
+# either way.
 #
 # features: what a terminal can do that another may not, as smooth
 # scrolling, and how it turns on: the variables that its environment gets
@@ -28,16 +36,18 @@
 [terminals.ghostty]
 app = "/Applications/Ghostty.app"
 launch = ["{app}/Contents/MacOS/ghostty", "-e", "{command}"]
-# env = { XDG_CONFIG_HOME = "~/ttybench/config" }
+env = { XDG_CONFIG_HOME = "~/ttybench/configs" }
 beside = { open = ["cmd+d"], back = ["cmd+["] }
 
 [terminals.alacritty]
 app = "/Applications/Alacritty.app"
 launch = ["{app}/Contents/MacOS/alacritty", "-e", "{command}"]
+env = { XDG_CONFIG_HOME = "~/ttybench/configs" }
 
 [terminals.kitty]
 app = "/Applications/kitty.app"
 launch = ["{app}/Contents/MacOS/kitty", "{command}"]
+env = { XDG_CONFIG_HOME = "~/ttybench/configs" }
 # Its first layout puts a new window below the first: a click above.
 beside = { open = ["cmd+enter"], click = [0.5, 0.25] }
 
@@ -58,5 +68,5 @@ launch = "open"
 app = "/Applications/Lokyr.app"
 launch = "open"
 beside = { open = ["cmd+d"], back = ["cmd+["] }
-# env = { XDG_CONFIG_HOME = "~/ttybench/lokyr" }                # [window] smooth-scroll = false
-# features.smooth-scroll = { env = { XDG_CONFIG_HOME = "~/ttybench/lokyr-smooth" } }  # = true
+env = { XDG_CONFIG_HOME = "~/ttybench/configs" }               # [window] smooth-scroll = false
+# features.smooth-scroll = { env = { XDG_CONFIG_HOME = "~/ttybench/configs-smooth" } }  # = true

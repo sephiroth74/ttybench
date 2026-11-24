@@ -1,0 +1,26 @@
+# Lokyr's base config for ttybench: Menlo at 13 points, 120 × 40 cells, no
+# ligatures, a cursor that doesn't blink, an opaque window, about 10 000
+# rows of scrollback, smooth scrolling off, no windows restored, no tips.
+[app]
+restore-windows = "never"
+
+[font]
+family = "Menlo"
+size = 13
+ligatures = false
+
+[cursor]
+blink = false
+
+[window]
+columns = 120
+rows = 40
+remember-frame = false
+background-opacity = 1
+smooth-scroll = false
+
+[scrollback]
+limit = 10
+
+[plugins.quick-tips]
+enabled = false

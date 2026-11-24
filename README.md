@@ -6,8 +6,118 @@ ttybench knows no terminal by name. You describe the terminals you want to measu
 
 Each tool is a binary of its own, `ttybench-<tool>`, which you can run alone. `ttybench <tool>` runs it too, as `git` runs its commands, and `ttybench --help` lists the tools it finds beside it or on your `PATH`.
 
-> [!NOTE]
-> ttybench is under way: the tools come one by one, toward version 0.1.0.
+This is version 0.1.0.
+
+- [What it measures](#what-it-measures)
+- [Install](#install) and [permissions](#permissions)
+- [A first session](#a-first-session)
+- [Measure honestly](#measure-honestly)
+- [Describe your terminals](#describe-your-terminals), [run a session](#run-a-session), [read its report](#read-a-sessions-report), [see its charts](#see-a-sessions-charts)
+- [The tools](#the-tools), one by one
+- [Limits](#limits)
+
+## What it measures
+
+| Tool | What | Its metrics | It takes |
+|---|---|---|---|
+| [`startup`](#startup) | From the launch to the window, and to the shell running a command | `window_ms`, `ready_ms` | |
+| [`idle`](#idle) | The CPU, the wakeups and the power of a terminal at rest | `cpu_percent`, `package_idle_wakeups_per_s`, `interrupt_wakeups_per_s`, `power_mw` | |
+| [`memory`](#memory) | The memory of its processes | `footprint_mib`, `peak_mib` | |
+| [`throughput`](#throughput) | How fast it prints a file | `written_mib_s`, `quiet_mib_s` | |
+| [`latency`](#latency) | From a key's press to the frame that shows it, beside a flood too | `latency_ms`, `missed_keys` | Screen Recording, Accessibility |
+| [`scroll`](#scroll) | The frames that show the text moved as you scroll | `frames_per_s`, `frame_gap_ms` | Screen Recording, Accessibility |
+| [`gpu`](#gpu) | Its GPU time and WindowServer's, and the system's GPU | `terminal_gpu_ms_per_s`, `window_server_gpu_ms_per_s`, `gpu_power_mw`, `gpu_active_percent`, `gpu_freq_mhz` | Accessibility to scroll, `sudo` for the system's |
+| [`frames`](#frames) | Each frame on the GPU and on the display | `frame_gpu_ms`, `frames_per_s`, `frame_gap_ms`, `refreshes_with_frame`, `frames_shown_per_s`, `frames_dropped` | Xcode, Accessibility to scroll |
+| [`motion`](#motion) | Its window dragged or resized: frames, misses, the compositor's delay | `frames_per_s`, `missed_frames`, `compositor_delay_ms`, `terminal_cpu_percent`, `window_server_cpu_percent` | Xcode, Accessibility |
+
+Beside them, [`run`](#run-a-session) runs a session of tools and terminals in balanced orders, [`report`](#read-a-sessions-report) sums it up in tables, its A/B and its budgets, and [`charts`](#see-a-sessions-charts) draws it, with a page of both. `ttybench-payload` is what runs inside the terminal: it reports that it runs, prints, reads keys and rests, and you never run it yourself.
+
+## Install
+
+ttybench runs on a Mac of Apple Silicon, of macOS 26 or later. It builds with Rust, of the version that `rust-toolchain.toml` pins, which [rustup](https://rustup.rs) installs by itself:
+
+```sh
+git clone https://github.com/sephiroth74/ttybench.git
+cd ttybench
+cargo build --release --locked
+export PATH="$PWD/target/release:$PATH"   # and in your shell's profile
+ttybench --help
+```
+
+`frames` and `motion` record Instruments' traces with `xctrace`, which comes with Xcode, not with its Command Line Tools: install Xcode, and point `xcode-select` at it once, `sudo xcode-select --switch /Applications/Xcode.app`.
+
+## Permissions
+
+macOS asks for a permission of the app that runs ttybench, such as your terminal or your editor, not of ttybench itself: grant it in System Settings › Privacy & Security, then quit and open that app again.
+
+- **Accessibility**, for the keys, the clicks, the scrolls and the drags that `latency`, `scroll`, `motion`, and `gpu` and `frames` of a scroll send. Without it, macOS drops them and tells nothing: the tools check first and stop.
+- **Screen & System Audio Recording**, for the capture of the window that `latency` and `scroll` read.
+- **`sudo`**, for `gpu --system`, which reads `powermetrics`: run `sudo -v` first, or give its run `sudo = true` in a session, which asks once and keeps it.
+
+Run ttybench from an app that you don't measure: each tool launches a terminal of its own and quits it once measured, and a copy of the same terminal already open shares the machine with the measure. `ttybench run` tells you when one is.
+
+## A first session
+
+1. **Give the terminals one config.** Copy [`examples/configs`](examples/configs) to `~/ttybench/configs`: Ghostty, kitty, Alacritty and Lokyr, each of Menlo at 13 points, 120 × 40 cells, no ligatures, a cursor that doesn't blink and an opaque window. A terminal that reads its config from the folder that `XDG_CONFIG_HOME` names takes it from there; give the others' profiles the same by hand.
+
+   ```sh
+   mkdir -p ~/ttybench && cp -R examples/configs ~/ttybench/configs
+   ```
+
+2. **Describe your terminals.** Copy [`examples/terminals.toml`](examples/terminals.toml) to `~/.config/ttybench/terminals.toml`, and keep the terminals that you have:
+
+   ```sh
+   mkdir -p ~/.config/ttybench && cp examples/terminals.toml ~/.config/ttybench/
+   ```
+
+3. **Try a tool on one terminal**, three rounds of its startup, and read what it found:
+
+   ```sh
+   ttybench startup --terminal ghostty --rounds 3 --session /tmp/first
+   ttybench report /tmp/first --out -
+   ```
+
+4. **Write a session**: two terminals, their startup and their throughput, two cycles, so that each runs first once:
+
+   ```toml
+   # session.toml
+   terminals = ["ghostty", "kitty"]
+   pause = 2
+   cycles = 2
+   season = 10
+
+   [[run]]
+   tool = "startup"
+   rounds = 10
+
+   [[run]]
+   tool = "throughput"
+   args = ["--text", "plain"]
+   rounds = 3
+   ```
+
+5. **Run it**, after a look at its runs in their order, and leave the Mac alone while it runs:
+
+   ```sh
+   ttybench run session.toml --dry-run
+   ttybench run session.toml
+   ```
+
+6. **Open its page**, `sessions/<date>/index.html`, of the report's tables and the charts; `report.md` holds the same tables.
+
+Then add `latency` and `scroll` once the app that runs ttybench has the Screen Recording and Accessibility permissions, and `gpu --system` of `sudo = true`.
+
+## Measure honestly
+
+A figure tells a terminal apart only where everything else stays alike. ttybench keeps what it can alike, and records what it can't, so that the report compares records of the same conditions alone; the rest is yours.
+
+- **One config for every terminal**: the same font, font size and window size, a cursor that doesn't blink, no ligatures, an opaque window, no blur, no plugins or extensions, no shell integration, and every feature off that another terminal lacks. A feature is measured of the terminals that have it, apart, as [Features](#features) tells.
+- **One session**: the machine's load, its temperature, its display and its power move the figures from a session to the next by more than many changes. Compare terminals, and copies of one, within a session, and see a history of sessions as a trend.
+- **Balanced orders**: a session turns each run's terminals at each cycle, so that each runs first as often as last; give it cycles of a multiple of the terminals' number.
+- **The same pause** before each run, so that each starts of the same rest.
+- **Seasoned copies**: a terminal just built, installed or moved starts slower for its first launches, while macOS checks and caches it; `season` launches each terminal that many times before the first run. Build two copies of one terminal alike: a copy that is not notarized starts slower than one that is.
+- **The Mac left alone**: no other app moving on screen, the pointer and the keyboard untouched, the Mac on its power adapter. A background scan of new files, as an antivirus's of a trace just written, takes the machine for minutes.
+- **The same display** for every terminal of a measure, at its rate: each record keeps the display's refresh rate.
 
 ## Describe your terminals
 
@@ -17,21 +127,27 @@ Copy [`examples/terminals.toml`](examples/terminals.toml) and keep the terminals
 [terminals.ghostty]
 app = "/Applications/Ghostty.app"
 launch = ["{app}/Contents/MacOS/ghostty", "-e", "{command}"]
+env = { XDG_CONFIG_HOME = "~/ttybench/configs" }
 
 [terminals.iterm2]
 app = "/Applications/iTerm.app"
 launch = "open"
 ```
 
-- `launch` is the program and its arguments, with `{app}` for the bundle, `{command}` for the script that ttybench runs in the terminal, and `{cwd}` for the folder it starts in. A terminal that takes no command on its command line, such as Terminal.app, iTerm2 or Warp, uses `"open"`: ttybench opens a `.command` script with the app.
-- `env` gives the terminal more environment variables, such as the folder of a config made for the benchmarks.
-- Give every terminal the same font, font size and window size, so that their figures compare.
+| Key | What |
+|---|---|
+| `app` | The app's bundle, a path absolute or from `~`. Its version, and its build where that differs, go into each record. |
+| `launch` | The program and its arguments, of `{app}` for the bundle, `{command}` for the script that ttybench runs in the terminal, and `{cwd}` for the folder it starts in. A terminal that takes no command on its command line, as Terminal.app, iTerm2 or Warp, uses `"open"`: ttybench opens a `.command` script with the app, through `open -n -a`. |
+| `env` | More environment variables for the terminal, as `XDG_CONFIG_HOME`, the folder of its config of the benchmarks; `~` expands. |
+| `quit` | How it quits once measured: `"signal"`, the default, a `SIGTERM` to its processes, or `"app"`, its own quit, as its menu's; a `SIGKILL` past a deadline either way. |
+| `beside` | The keys that open a pane beside the measured one and give it the keyboard, `open`, and those that give it back, `back`, or where to click, `click`, for [`latency --flood`](#latency). |
+| `features.<name>` | A feature that the terminal has, and how it turns on: `env` in place of the base's variables, `args` after its program's name. See [Features](#features). |
 
-The tools read `--terminals <file>`, else `$TTYBENCH_TERMINALS`, else `terminals.toml` in the current folder, else `~/.config/ttybench/terminals.toml`.
+The tools read `--terminals <file>`, else `$TTYBENCH_TERMINALS`, else `terminals.toml` in the current folder, else `~/.config/ttybench/terminals.toml`. A key is written as `cmd+shift+d`: its modifiers, `cmd`, `ctrl`, `alt` and `shift`, then a character of the US layout, or `enter`, `tab`, `space`, `escape`, `backspace`, `delete`, an arrow, `home`, `end`, `pageup`, `pagedown` or `f1` to `f8`.
 
 ### Measure the same thing of every terminal
 
-A measure compares terminals only when each runs of the same conditions: give every terminal a base config alike, of the same font, font size and window size, a cursor that doesn't blink, no ligatures, an opaque window, no plugins or extensions of its own, and every feature that another terminal may lack turned off. ttybench can't read two terminals' configs and tell them alike: that is yours to do, in the configs that your terminals' file points them at. Each record keeps the feature that it measured, if one, so that reports compare records of the same conditions alone.
+A measure compares terminals only when each runs of the same conditions: give every terminal a base config alike, of the same font, font size and window size, a cursor that doesn't blink, no ligatures, an opaque window, no plugins or extensions of its own, and every feature that another terminal may lack turned off. ttybench can't read two terminals' configs and tell them alike: that is yours to do, in the configs that your terminals' file points them at. Each record keeps the feature that it measured, if one, and what the tools see of the conditions, as the window's cells, so that reports compare records of the same conditions alone, and tell apart those that differ.
 
 ### Features
 
@@ -41,8 +157,8 @@ Some measures compare a feature that not every terminal has, such as smooth scro
 [terminals.lokyr]
 app = "/Applications/Lokyr.app"
 launch = "open"
-env = { XDG_CONFIG_HOME = "~/ttybench/lokyr" }                       # smooth scrolling off
-features.smooth-scroll = { env = { XDG_CONFIG_HOME = "~/ttybench/lokyr-smooth" } }
+env = { XDG_CONFIG_HOME = "~/ttybench/configs" }                       # smooth scrolling off
+features.smooth-scroll = { env = { XDG_CONFIG_HOME = "~/ttybench/configs-smooth" } }
 
 [terminals.kitty]
 app = "/Applications/kitty.app"
@@ -76,6 +192,20 @@ args = ["--text", "plain"]
 ttybench run session.toml --dry-run   # the runs, in their order
 ttybench run session.toml
 ```
+
+| Key | What | By default |
+|---|---|---|
+| `terminals` | The terminals, by their names in the terminals' file, in their order of the first cycle | |
+| `terminals-file` | The terminals' file, from the session file's folder | the one that the tools look for |
+| `folder` | The session's folder, from the session file's folder; `{date}` is the date and time it starts | `sessions/{date}` |
+| `pause` | The seconds before each run | 5 |
+| `cycles` | How many times the runs go, each time in another order | 1 |
+| `rounds` | Each run's `--rounds`, unless the run says | the tool's |
+| `season` | How many times each terminal launches before the first run, not counted | 0 |
+| `timeout` | The seconds that a run may take before it is stopped | 1800 |
+| `ab` | Two terminals compared, `{ a = "<before>", b = "<after>" }`: see [Compare two copies](#compare-two-copies-of-a-terminal) | |
+| `[[run]]` | A tool to run: `tool`, its `args` but `--terminal`, `--terminals` and `--session`, which the session gives, its `terminals` of the session's, its `rounds`, `sudo = true`, and the `feature` that it measures | |
+| `[[budget]]` | A limit of a metric: see [Budgets](#budgets) | |
 
 - **Balanced orders**: each cycle turns each run's terminals by one, so that over as many cycles as a run has terminals each one runs first as often as last. ttybench tells you when the cycles don't balance them.
 - **The session's folder**, `sessions/<date>` by default, keeps a copy of the session's and the terminals' files, `machine.json`, `runs.jsonl` of each run's end, `records.jsonl` of every record, each of its cycle, and a folder of each run of its output.
@@ -353,6 +483,19 @@ Lokyr's window dragged 10 seconds at 60 Hz, measured with ttybench and with the 
 | ttybench | 59.9 | 1 | 12.63 · 14.00 ms | 4.1 % | 35.8 % |
 
 The frames missed vary from a run to the next, from none to ten, for both.
+
+## Limits
+
+- **macOS on Apple Silicon alone**: the window server, ScreenCaptureKit, IOKit's GPU clients and Instruments are macOS's; the processes' GPU time is the Apple GPU's.
+- **To the window server, not to the light**: `latency` ends at the frame that the window server took from the terminal, and `scroll` counts the frames that it took. The display's scan-out and its panel's response come after, alike for every terminal on that display; a camera would see them, ttybench doesn't.
+- **A frame's time is the window server's**: each capture's frame tells when the window server took it, within a refresh of the key's echo, not when the display showed it. `frames` reads which frames the display showed from its own record, in Instruments' trace.
+- **A startup through `open`** counts Launch Services' work and the app's opening of a script, more than a terminal launched by its own program does: compare startups among terminals launched alike.
+- **One window**: the tools measure a terminal's first window, and a pane beside it for `latency --flood`; tabs, splits and other windows aren't measured.
+- **A virtual machine's GPU** tells no process's GPU time: `gpu` stops there, of its reason, and `frames` reads what Instruments' trace holds of it.
+- **The system's GPU** is the whole GPU's: `powermetrics` tells its power and its share of the time at work, not each process's. A terminal's own share is its GPU time.
+- **Shortcuts of the US layout**: `beside` sends a shortcut's character with its key, which an app that reads the key's place on another layout may not take; give it a click.
+- **Traces take room**: `frames` and `motion` ask for 2 and 4 GiB free, and remove each trace once read.
+- **Figures compare within a session**: a history of sessions tells a trend, within a few percent.
 
 ## License
 
