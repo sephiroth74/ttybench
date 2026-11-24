@@ -30,7 +30,8 @@ pub struct Record {
     pub tool: String,
     /// The terminal, as its config names it.
     pub terminal: String,
-    /// Its version, as its bundle tells it, if one.
+    /// Its version, as its bundle tells it, of its build after it where
+    /// that differs, as `1.4.0 (202611220721)`, if one.
     #[serde(default)]
     pub version: Option<String>,
     /// The metric, as `ready_ms`.
@@ -95,12 +96,24 @@ fn refresh_hz() -> Option<f64> {
     (rate > 0.0).then_some(rate)
 }
 
-/// The version of the app at `app`, its bundle's `CFBundleShortVersionString`,
-/// if it tells one.
+/// The version of the app at `app`, its bundle's
+/// `CFBundleShortVersionString`, of its build, `CFBundleVersion`, after it
+/// where the bundle tells one apart, as `1.4.0 (202611220721)`, so that two
+/// builds of one version tell apart too; none if it tells no version.
 pub fn app_version(app: &Path) -> Option<String> {
+    let version = bundle_key(app, "CFBundleShortVersionString")?;
+    Some(match bundle_key(app, "CFBundleVersion") {
+        Some(build) if build != version => format!("{version} ({build})"),
+        _ => version,
+    })
+}
+
+/// The text of the key `key` of the bundle at `app`'s `Info.plist`, if it
+/// holds one.
+fn bundle_key(app: &Path, key: &str) -> Option<String> {
     let plist = app.join("Contents/Info.plist");
     let output = Command::new("/usr/bin/plutil")
-        .args(["-extract", "CFBundleShortVersionString", "raw", "-o", "-"])
+        .args(["-extract", key, "raw", "-o", "-"])
         .arg(&plist)
         .output()
         .ok()?;
@@ -108,7 +121,7 @@ pub fn app_version(app: &Path) -> Option<String> {
         .status
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-        .filter(|version| !version.is_empty())
+        .filter(|text| !text.is_empty())
 }
 
 /// A run's end, as the coordinator's log holds it.
@@ -305,8 +318,13 @@ mod tests {
 
     #[test]
     fn an_app_tells_its_version() {
-        let version = app_version(Path::new("/System/Applications/Utilities/Terminal.app"));
-        assert!(version.is_some_and(|version| version.contains('.')));
+        // Terminal's build is not its version: both, as `2.15 (488.9)`.
+        let version =
+            app_version(Path::new("/System/Applications/Utilities/Terminal.app")).unwrap();
+        assert!(
+            version.contains('.') && version.contains(" (") && version.ends_with(')'),
+            "{version}"
+        );
         assert_eq!(app_version(Path::new("/nonexistent.app")), None);
     }
 }

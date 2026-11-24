@@ -153,6 +153,20 @@ ttybench charts sessions/2026-11-24-1405 --out ~/Desktop/charts
 
 Each terminal keeps its color in every chart, by its place in the session. The charts follow the light or dark appearance of the page or system that shows them, or a page's `light` or `dark` class on the chart. Each chart has a title and a description for screen readers, and tells its values in a tooltip as the pointer rests on a mark. `charts/charts.json` lists the charts, their titles and the report's groups that each shows.
 
+Last, `ttybench charts` writes the session's page, `index.html` in its folder: the report's tables, each chart after its own table. It is one static file of no script, its charts inline, so it opens in any browser, without a network, and can be sent as it is.
+
+### A terminal along its versions
+
+`--history` draws the history of several sessions, the oldest first: for each terminal of two sessions or more, a chart of each tool, a panel of each metric, each session's median a dot, along the terminal's versions:
+
+```sh
+ttybench charts --history sessions/1.4.0 sessions/1.5.0 --out history
+```
+
+A version and its build both show, as `1.4.0 (202611220721)`, so that two builds of one version tell apart. A metric joins its own across sessions of the same conditions, whatever their rounds, pauses and seasoning; a session of other conditions, as another window size, starts a panel of its own. `history/index.html` shows them all.
+
+Sessions measure alike within a few percent alone: the machine's load, its display and its temperature move a session's figures. The history tells a trend; an A/B in one session tells a change.
+
 ## The tools
 
 ### startup

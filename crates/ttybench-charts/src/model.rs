@@ -44,6 +44,9 @@ impl Report {
 pub struct Terminal {
     /// Its name.
     pub name: String,
+    /// Its version, if its records tell one.
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 /// A metric of a tool, of records of the same conditions.
