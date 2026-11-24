@@ -34,3 +34,8 @@ terminals = ["ghostty", "lokyr"]
 tool = "latency"
 args = ["--keys", "200"]
 rounds = 1
+
+[[run]]
+tool = "latency"
+args = ["--keys", "200", "--flood"]
+rounds = 1

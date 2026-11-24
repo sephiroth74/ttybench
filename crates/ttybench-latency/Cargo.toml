@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+libc.workspace = true
 serde_json.workspace = true
 ttybench-core.workspace = true
 

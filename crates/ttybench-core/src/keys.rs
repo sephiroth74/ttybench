@@ -1,4 +1,5 @@
-//! The keys that a tool types into a terminal, as a hand would: posted to
+//! The keys that a tool types into a terminal, and its clicks, as a hand
+//! would: posted to
 //! the terminal's process alone, so that none reaches another app,
 //! whichever is in front, or, as a keyboard's, to the window server, which
 //! sends them to the app in front. Posting them takes the Accessibility
@@ -8,7 +9,8 @@
 use std::thread;
 use std::time::Duration;
 
-use objc2_core_graphics::{CGEvent, CGEventFlags, CGEventTapLocation};
+use objc2_core_foundation::CGPoint;
+use objc2_core_graphics::{CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton};
 
 use crate::config::Key;
 
@@ -171,10 +173,37 @@ pub fn strike(to: To, code: u16) -> u64 {
     pressed
 }
 
-/// Posts the key `code`, down or up, of `flags`, to the process `pid`.
-fn post(pid: libc::pid_t, code: u16, down: bool, flags: CGEventFlags) {
+/// Clicks at `x`, `y`, in points from the top left of the main display, as
+/// a window's frame is placed: the left button pressed and released, of
+/// the window server, which sends it to the window there.
+pub fn click(x: f64, y: f64) {
+    let at = CGPoint { x, y };
+    for kind in [CGEventType::LeftMouseDown, CGEventType::LeftMouseUp] {
+        let event = CGEvent::new_mouse_event(None, kind, at, CGMouseButton::Left);
+        CGEvent::post(CGEventTapLocation::HIDEventTap, event.as_deref());
+        thread::sleep(PAUSE);
+    }
+}
+
+/// Posts the key `code`, down or up, of `flags`, to the process `pid`, of
+/// the text `text` if one: the character that the key types on the US
+/// layout, which an app that matches its shortcuts by their characters,
+/// as a menu does, then reads whatever the keyboard's layout.
+fn post(pid: libc::pid_t, code: u16, down: bool, flags: CGEventFlags, text: Option<char>) {
     if let Some(event) = CGEvent::new_keyboard_event(None, code, down) {
         CGEvent::set_flags(Some(&event), flags);
+        if let Some(character) = text {
+            let mut units = [0u16; 2];
+            let units = character.encode_utf16(&mut units);
+            // SAFETY: the units live through the call, of the length given.
+            unsafe {
+                CGEvent::keyboard_set_unicode_string(
+                    Some(&event),
+                    units.len() as _,
+                    units.as_ptr(),
+                );
+            }
+        }
         CGEvent::post_to_pid(pid, Some(&event));
     }
     thread::sleep(PAUSE);
@@ -200,16 +229,25 @@ pub fn press(pid: libc::pid_t, key: &Key) -> bool {
     if key.command {
         held.push((COMMAND, CGEventFlags::MaskCommand));
     }
+    // The character of a key of one, as the US layout types it.
+    let mut chars = key.key.chars();
+    let text = match (chars.next(), chars.next()) {
+        (Some(character), None) if key.shift && character.is_ascii_lowercase() => {
+            Some(character.to_ascii_uppercase())
+        }
+        (Some(character), None) => Some(character),
+        _ => None,
+    };
     let mut flags = CGEventFlags::empty();
     for &(modifier, flag) in &held {
         flags |= flag;
-        post(pid, modifier, true, flags);
+        post(pid, modifier, true, flags, None);
     }
-    post(pid, code, true, flags);
-    post(pid, code, false, flags);
+    post(pid, code, true, flags, text);
+    post(pid, code, false, flags, text);
     for &(modifier, flag) in held.iter().rev() {
         flags &= !flag;
-        post(pid, modifier, false, flags);
+        post(pid, modifier, false, flags, None);
     }
     true
 }

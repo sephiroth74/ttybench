@@ -10,11 +10,18 @@
 # env: what its environment gets beside ttybench's, as the folder of a
 # config of the session's, the same font, size and window for every
 # terminal, so that their measures compare.
+#
+# beside: for the measures beside a pane that floods, the keys that open
+# a pane beside the measured one and give it the keyboard (open), and the
+# keys that give the keyboard back to the measured pane (back), or where
+# to click in it (click), as shares of the window's width and height from
+# its top left. A key's character is the US layout's.
 
 [terminals.ghostty]
 app = "/Applications/Ghostty.app"
 launch = ["{app}/Contents/MacOS/ghostty", "-e", "{command}"]
 # env = { XDG_CONFIG_HOME = "~/ttybench/config" }
+beside = { open = ["cmd+d"], back = ["cmd+["] }
 
 [terminals.alacritty]
 app = "/Applications/Alacritty.app"
@@ -23,6 +30,8 @@ launch = ["{app}/Contents/MacOS/alacritty", "-e", "{command}"]
 [terminals.kitty]
 app = "/Applications/kitty.app"
 launch = ["{app}/Contents/MacOS/kitty", "{command}"]
+# Its first layout puts a new window below the first: a click above.
+beside = { open = ["cmd+enter"], click = [0.5, 0.25] }
 
 [terminals.warp]
 app = "/Applications/Warp.app"
@@ -31,6 +40,7 @@ launch = "open"
 [terminals.iterm2]
 app = "/Applications/iTerm.app"
 launch = "open"
+beside = { open = ["cmd+d"], back = ["cmd+["] }
 
 [terminals.terminal]
 app = "/System/Applications/Utilities/Terminal.app"
@@ -39,3 +49,4 @@ launch = "open"
 [terminals.lokyr]
 app = "/Applications/Lokyr.app"
 launch = "open"
+beside = { open = ["cmd+d"], back = ["cmd+["] }

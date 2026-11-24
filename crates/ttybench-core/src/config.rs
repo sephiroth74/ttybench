@@ -1,6 +1,6 @@
 //! The terminals that a user measures, as their file describes them,
 //! `terminals.toml`: how each launches with a command, its environment, the
-//! keys that set a scenario up, and how it quits. ttybench knows no
+//! keys that open a pane beside the measured one, and how it quits. ttybench knows no
 //! terminal by name: everything that tells one from another is here.
 //!
 //! ```toml
@@ -8,6 +8,7 @@
 //! app = "/Applications/Ghostty.app"
 //! launch = ["{app}/Contents/MacOS/ghostty", "-e", "{command}"]
 //! env = { XDG_CONFIG_HOME = "~/ttybench/config" }
+//! beside = { open = ["cmd+d"], back = ["cmd+["] }
 //!
 //! [terminals.iterm2]
 //! app = "/Applications/iTerm.app"
@@ -25,7 +26,7 @@ use serde::de::{self, Deserializer};
 pub const PLACEHOLDERS: [&str; 3] = ["{app}", "{command}", "{cwd}"];
 
 /// The terminals of a file, by their names.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Terminals {
     /// Each terminal, by the name that the tools and the sessions call it.
@@ -34,7 +35,7 @@ pub struct Terminals {
 }
 
 /// A terminal to measure.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Terminal {
     /// Its app's bundle, as `/Applications/Ghostty.app`, a path absolute or
@@ -47,13 +48,70 @@ pub struct Terminal {
     /// value of `~` expanded, as the folder of its config of the session.
     #[serde(default, deserialize_with = "environment")]
     pub env: BTreeMap<String, String>,
-    /// The keys that set a scenario up once it is ready, in their order,
-    /// as `["cmd+d", "alt+cmd+i"]`.
+    /// The keys that open a pane beside the measured one, for a measure
+    /// beside a pane's work, if it has them.
     #[serde(default)]
-    pub setup: Vec<Key>,
+    pub beside: Option<Beside>,
     /// How it quits once measured.
     #[serde(default)]
     pub quit: Quit,
+}
+
+/// A pane beside the measured one: the keys that open it, in a split or a
+/// window of its own, and give it the keyboard; and the keys that give the
+/// keyboard back to the measured pane, or the place to click in it.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, try_from = "BesideFields")]
+pub struct Beside {
+    /// The keys that open the pane, in their order, as `["cmd+d"]`.
+    pub open: Vec<Key>,
+    /// The keys that give the keyboard back to the measured pane, as
+    /// `["cmd+["]`.
+    #[serde(default)]
+    pub back: Vec<Key>,
+    /// Where a click gives the keyboard back to the measured pane, after
+    /// `back`: its shares of the window's width and height, from its top
+    /// left, as `[0.5, 0.25]` in a pane above the other.
+    #[serde(default)]
+    pub click: Option<[f64; 2]>,
+}
+
+/// A pane beside's fields as they are written, before they are checked.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BesideFields {
+    open: Vec<Key>,
+    #[serde(default)]
+    back: Vec<Key>,
+    #[serde(default)]
+    click: Option<[f64; 2]>,
+}
+
+impl TryFrom<BesideFields> for Beside {
+    type Error = String;
+
+    fn try_from(fields: BesideFields) -> Result<Self, String> {
+        if fields.open.is_empty() {
+            return Err("`beside` opens its pane of no key: give `open` its keys".into());
+        }
+        if fields.back.is_empty() && fields.click.is_none() {
+            return Err(
+                "`beside` gives the keyboard back of neither `back` keys nor a `click`".into(),
+            );
+        }
+        if let Some(click) = fields.click
+            && !click.iter().all(|share| (0.0..=1.0).contains(share))
+        {
+            return Err(format!(
+                "`click` takes shares of the window from 0 to 1, not {click:?}"
+            ));
+        }
+        Ok(Self {
+            open: fields.open,
+            back: fields.back,
+            click: fields.click,
+        })
+    }
 }
 
 /// How a terminal launches with a command.
@@ -373,7 +431,7 @@ mod tests {
     #[test]
     fn a_terminal_of_its_environment_its_keys_and_its_quit() {
         let read = terminals(
-            "[terminals.x]\napp = \"~/Apps/X.app\"\nlaunch = [\"{app}/x\", \"--cwd={cwd}\", \"{command}\"]\nenv = { CONF = \"~/conf\" }\nsetup = [\"cmd+d\", \"alt+cmd+i\", \"cmd++\"]\nquit = \"app\"\n",
+            "[terminals.x]\napp = \"~/Apps/X.app\"\nlaunch = [\"{app}/x\", \"--cwd={cwd}\", \"{command}\"]\nenv = { CONF = \"~/conf\" }\nbeside = { open = [\"cmd+d\", \"alt+cmd+i\"], back = [\"cmd++\"] }\nquit = \"app\"\n",
         )
         .unwrap();
         let x = &read.terminals["x"];
@@ -381,9 +439,18 @@ mod tests {
         assert_eq!(x.app, PathBuf::from(format!("{home}/Apps/X.app")));
         assert_eq!(x.env["CONF"], format!("{home}/conf"));
         assert_eq!(x.quit, Quit::App);
-        assert_eq!(x.setup.len(), 3);
-        assert!(x.setup[1].option && x.setup[1].command && x.setup[1].key == "i");
-        assert!(x.setup[2].command && x.setup[2].key == "+");
+        let beside = x.beside.as_ref().unwrap();
+        assert_eq!((beside.open.len(), beside.back.len()), (2, 1));
+        assert!(beside.open[1].option && beside.open[1].command && beside.open[1].key == "i");
+        assert!(beside.back[0].command && beside.back[0].key == "+");
+        assert_eq!(beside.click, None);
+        let clicked = terminals(
+            "[terminals.y]\napp = \"/Y.app\"\nlaunch = \"open\"\nbeside = { open = [\"cmd+enter\"], click = [0.5, 0.25] }\n",
+        )
+        .unwrap();
+        let beside = clicked.terminals["y"].beside.as_ref().unwrap();
+        assert!(beside.back.is_empty());
+        assert_eq!(beside.click, Some([0.5, 0.25]));
         assert_eq!(
             x.argv(Path::new("/r"), Path::new("/w")).unwrap(),
             [
@@ -417,12 +484,20 @@ mod tests {
                 "X.app",
             ),
             (
-                "[terminals.x]\napp = \"/X.app\"\nlaunch = \"open\"\nsetup = [\"hyper+d\"]\n",
+                "[terminals.x]\napp = \"/X.app\"\nlaunch = \"open\"\nbeside = { open = [\"hyper+d\"], back = [] }\n",
                 "hyper",
             ),
             (
                 "[terminals.x]\napp = \"/X.app\"\nlaunch = \"open\"\ncolour = 1\n",
                 "colour",
+            ),
+            (
+                "[terminals.x]\napp = \"/X.app\"\nlaunch = \"open\"\nbeside = { open = [\"cmd+d\"] }\n",
+                "neither",
+            ),
+            (
+                "[terminals.x]\napp = \"/X.app\"\nlaunch = \"open\"\nbeside = { open = [\"cmd+d\"], click = [0.5, 2] }\n",
+                "shares",
             ),
         ] {
             let error = terminals(text).unwrap_err();

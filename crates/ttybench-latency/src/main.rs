@@ -8,9 +8,21 @@
 //!
 //! ```text
 //! ttybench-latency --terminal <name> [--terminals <file>] [--keys <n>]
-//!                  [--spacing <ms>] [--to process|system] [--rounds <n>]
-//!                  [--pause <seconds>] [--session <folder>]
+//!                  [--spacing <ms>] [--sync] [--flood] [--to process|system]
+//!                  [--rounds <n>] [--pause <seconds>] [--session <folder>]
 //! ```
+//!
+//! Each spacing gets a random share of a display's refresh more, so that
+//! the keys fall at every phase of the refresh alike, and their latencies
+//! hold its whole range. Of `--sync`, each key comes a spacing after the
+//! frame of the last one's character, as Typometer's synchronous mode
+//! types them: at one phase of the refresh, of a spacing of whole
+//! refreshes, which its latencies hold alone.
+//!
+//! Of `--flood`, a pane beside the measured one prints without a pause:
+//! the terminal's `beside` keys open it, its `back` keys or its `click`
+//! give the keyboard back, and a shell's `yes` runs in it once the typed
+//! line is found.
 //!
 //! The keys go to the terminal's process, whichever app is in front, or,
 //! of `--to system`, through the window server as a keyboard's, to the app
@@ -63,6 +75,12 @@ const AFTER: Duration = Duration::from_millis(30);
 /// as letters, whichever its keys.
 const LETTERS: &str = "fjdkslaghrueiwoqptyznvmcbx";
 
+/// How long the pane beside takes to start its shell, at most.
+const BESIDE: Duration = Duration::from_millis(1500);
+
+/// The refresh of a display that tells none, in hertz.
+const REFRESH_HZ: f64 = 60.0;
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -84,6 +102,10 @@ enum Target {
 struct Settings {
     keys: usize,
     spacing: Duration,
+    /// The random share of a spacing more, at most, none of `--sync`.
+    jitter: Duration,
+    sync: bool,
+    flood: bool,
     target: Target,
 }
 
@@ -110,12 +132,27 @@ fn run() -> Result<(), String> {
             "pause",
             "session",
         ],
-        &[],
+        &["sync", "flood"],
     )?;
     let (name, terminal) = cli::terminal(&args)?;
+    let refresh_hz = Machine::this().refresh_hz;
+    let sync = args.flag("sync");
+    let flood = args.flag("flood");
+    if flood && terminal.beside.is_none() {
+        return Err(format!(
+            "the terminals' file gives {name} no `beside` keys, of the pane that floods"
+        ));
+    }
     let settings = Settings {
         keys: args.number("keys", 100)?,
         spacing: Duration::from_secs_f64(args.number("spacing", 150.0)? / 1000.0),
+        jitter: if sync {
+            Duration::ZERO
+        } else {
+            Duration::from_secs_f64(1.0 / refresh_hz.unwrap_or(REFRESH_HZ))
+        },
+        sync,
+        flood,
         target: match args.value("to").unwrap_or("process") {
             "process" => Target::Process,
             "system" => Target::System,
@@ -166,10 +203,22 @@ fn run() -> Result<(), String> {
         }
         .into(),
     );
+    conditions.insert(
+        "phase".into(),
+        if settings.sync { "sync" } else { "random" }.into(),
+    );
+    conditions.insert(
+        "jitter_ms".into(),
+        (settings.jitter.as_secs_f64() * 1000.0).into(),
+    );
+    conditions.insert(
+        "beside".into(),
+        if settings.flood { "flood" } else { "rest" }.into(),
+    );
     conditions.insert("echo".into(), "tty".into());
     conditions.insert("cols".into(), grid.0.into());
     conditions.insert("rows".into(), grid.1.into());
-    if let Some(refresh) = Machine::this().refresh_hz {
+    if let Some(refresh) = refresh_hz {
         conditions.insert("refresh_hz".into(), refresh.into());
     }
     let latencies: Vec<f64> = measured
@@ -219,7 +268,7 @@ fn round(
     let payload = Payload::new(binary, &["keys", "--count", "0", "--line", &line])
         .map_err(|error| format!("the payload: {error}"))?;
     let (launched, ready) = terminal::launch_ready(name, terminal, &payload, home, TIMEOUT)?;
-    let measured = measure(name, &launched, &ready, settings);
+    let measured = measure(name, terminal, &launched, &ready, settings);
     launched
         .quit(QUIT)
         .map_err(|error| format!("{name} does not quit: {error}"))?;
@@ -229,6 +278,7 @@ fn round(
 /// The keys of a terminal launched, its payload `ready`, measured.
 fn measure(
     name: &str,
+    terminal: &Terminal,
     launched: &terminal::Launched,
     ready: &serde_json::Value,
     settings: &Settings,
@@ -255,21 +305,30 @@ fn measure(
         Target::Process => To::Process(window.pid),
         Target::System => To::System,
     };
+    let flood = match (&terminal.beside, settings.flood) {
+        (Some(beside), true) => Some(Flood::open(launched, window.pid, beside)?),
+        _ => None,
+    };
     let capture = Capture::start(window.id)?;
     let mut typed = 0;
     let mut last = capture.next(Duration::from_secs(2));
     last = gather(&capture, last, Instant::now() + Duration::from_millis(200));
     let line = find_line(name, &capture, to, &mut typed, &mut last)?;
+    if let Some(flood) = &flood {
+        flood.start(name, launched)?;
+    }
     capture.band(Some(line.band));
     last = gather(&capture, last, Instant::now() + Duration::from_millis(200));
     let changes = changes(&capture, &mut last, &line, QUIET);
     if changes > 0 {
         return Err(format!(
             "{name}'s typed line changed {changes} times in {} s of no key, as a blinking \
-             cursor's does: turn its cursor's blinking off",
+             cursor's does, or a pane beside that reaches its row: turn its cursor's blinking \
+             off",
             QUIET.as_secs()
         ));
     }
+    let mut random = Random::new(ttybench_core::clock::now_ns());
     let mut latencies = Vec::with_capacity(settings.keys);
     let mut delays = Vec::with_capacity(settings.keys);
     let mut missed = 0;
@@ -300,14 +359,131 @@ fn measure(
             Some(at) => latencies.push(at.saturating_sub(key_ns) as f64 / 1e6),
             None => missed += 1,
         }
-        next = (struck + settings.spacing).max(Instant::now() + AFTER);
+        let after = match shown {
+            // A spacing after the frame of the character, on the shared
+            // clock, as Instant counts the same time.
+            Some(at) if settings.sync => {
+                let now = ttybench_core::clock::now_ns();
+                let due = at + u64::try_from(settings.spacing.as_nanos()).unwrap_or(u64::MAX);
+                Instant::now() + Duration::from_nanos(due.saturating_sub(now))
+            }
+            _ => struck + settings.spacing + settings.jitter.mul_f64(random.share()),
+        };
+        next = after.max(Instant::now() + AFTER);
     }
+    if missed * 2 > settings.keys {
+        return Err(format!(
+            "{missed} of {} keys showed nothing on {name}'s typed line: did the pane beside \
+             keep the keyboard, or move the line?",
+            settings.keys
+        ));
+    }
+    drop(flood);
     Ok(Round {
         latencies,
         missed,
         delays,
         grid,
     })
+}
+
+/// A pane beside the measured one, of a shell that waits to print `yes`
+/// without a pause until a file of its own shows: its script and that
+/// file, in `/tmp`, so that its command types short.
+struct Flood {
+    script: std::path::PathBuf,
+    go: std::path::PathBuf,
+}
+
+impl Flood {
+    /// Opens the pane beside of `beside`'s keys in the terminal's process
+    /// `pid`, its shell running the script that waits, and gives the
+    /// keyboard back to the measured pane.
+    fn open(
+        launched: &terminal::Launched,
+        pid: libc::pid_t,
+        beside: &ttybench_core::config::Beside,
+    ) -> Result<Self, String> {
+        let stem = format!("/tmp/ttybench-flood-{}", std::process::id());
+        let script = std::path::PathBuf::from(format!("{stem}.sh"));
+        let go = std::path::PathBuf::from(format!("{stem}.go"));
+        let _ = std::fs::remove_file(&go);
+        std::fs::write(
+            &script,
+            format!(
+                "until [ -e {} ]; do sleep 0.05; done\nexec yes\n",
+                go.display()
+            ),
+        )
+        .map_err(|error| format!("the flood's script: {error}"))?;
+        let flood = Self { script, go };
+        for key in &beside.open {
+            launched.press(key);
+        }
+        thread::sleep(BESIDE);
+        keys::type_text(pid, &format!("sh {}", flood.script.display()));
+        if let Ok(enter) = ttybench_core::config::Key::parse("enter") {
+            keys::press(pid, &enter);
+        }
+        thread::sleep(Duration::from_millis(300));
+        for key in &beside.back {
+            launched.press(key);
+        }
+        if let (Some([x, y]), Some(window)) = (beside.click, launched.window()) {
+            let frame = window.frame;
+            keys::click(frame.x + x * frame.width, frame.y + y * frame.height);
+        }
+        thread::sleep(Duration::from_millis(500));
+        Ok(flood)
+    }
+
+    /// Starts the flood, and waits for its `yes` among the terminal's
+    /// processes.
+    fn start(&self, name: &str, launched: &terminal::Launched) -> Result<(), String> {
+        std::fs::write(&self.go, "").map_err(|error| format!("the flood's start: {error}"))?;
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            let flooding = launched
+                .tree()
+                .iter()
+                .any(|&pid| ttybench_core::process::name(pid).is_ok_and(|name| name == "yes"));
+            if flooding {
+                thread::sleep(Duration::from_millis(500));
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        Err(format!(
+            "{name}'s pane beside runs no `yes`: do its `beside` keys open a pane of a shell \
+             and give it the keyboard?"
+        ))
+    }
+}
+
+impl Drop for Flood {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.script);
+        let _ = std::fs::remove_file(&self.go);
+    }
+}
+
+/// Random shares of a whole, of xorshift64*, as no crate is needed for a
+/// key's spacing.
+struct Random(u64);
+
+impl Random {
+    /// The shares of the seed `seed`.
+    fn new(seed: u64) -> Self {
+        Self(seed | 1)
+    }
+
+    /// The next share, from 0 to 1.
+    fn share(&mut self) -> f64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        (self.0.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1_u64 << 53) as f64
+    }
 }
 
 /// The key of the letter struck `typed`-th.
@@ -397,5 +573,20 @@ mod tests {
         codes.sort_unstable();
         codes.dedup();
         assert_eq!(codes.len(), 26);
+    }
+
+    #[test]
+    fn the_shares_fall_alike_over_the_whole() {
+        let mut random = Random::new(42);
+        let mut tenths = [0; 10];
+        for _ in 0..10_000 {
+            let share = random.share();
+            assert!((0.0..1.0).contains(&share));
+            tenths[(share * 10.0) as usize] += 1;
+        }
+        assert!(
+            tenths.iter().all(|&count| (850..1150).contains(&count)),
+            "{tenths:?}"
+        );
     }
 }
