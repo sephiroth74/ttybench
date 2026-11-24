@@ -91,6 +91,64 @@ pub fn sizes(pid: libc::pid_t) -> Vec<Size> {
         .collect()
 }
 
+/// The process of the window at the normal level on top of the others at
+/// `x`, `y`, in points from the top left of the main display, if one: the
+/// window that a pointer's event there reaches, as the window server lists
+/// the windows from the front.
+pub fn owner_at(x: f64, y: f64) -> Option<libc::pid_t> {
+    let options =
+        CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements;
+    let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID)?;
+    // SAFETY: the window server describes each window with a dictionary
+    // whose keys are strings.
+    let windows = unsafe { windows.cast_unchecked::<Description>() };
+    // SAFETY: reading constants that CoreGraphics defines.
+    let (owner, layer) = unsafe { (kCGWindowOwnerPID, kCGWindowLayer) };
+    windows
+        .iter()
+        .filter(|window| integer(window, layer) == Some(0))
+        .find(|window| {
+            frame(window).is_some_and(|frame| {
+                (frame.x..frame.x + frame.width).contains(&x)
+                    && (frame.y..frame.y + frame.height).contains(&y)
+            })
+        })
+        .and_then(|window| integer(&window, owner))
+}
+
+/// Brings the app of the process `pid` to the front, its windows over the
+/// others', through the Accessibility API, as an app that a click raises,
+/// where macOS kept another app in front as it launched: whether it took
+/// the request. It takes the Accessibility permission of the app that runs
+/// the tool.
+pub fn bring_to_front(pid: libc::pid_t) -> bool {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    unsafe extern "C" {
+        fn AXUIElementCreateApplication(pid: libc::pid_t) -> *mut std::ffi::c_void;
+        fn AXUIElementSetAttributeValue(
+            element: *mut std::ffi::c_void,
+            attribute: &CFString,
+            value: &CFType,
+        ) -> i32;
+        fn CFRelease(object: *mut std::ffi::c_void);
+    }
+    // SAFETY: the call takes any process's id and gives an element of its
+    // own, or null.
+    let app = unsafe { AXUIElementCreateApplication(pid) };
+    if app.is_null() {
+        return false;
+    }
+    let frontmost = CFString::from_static_str("AXFrontmost");
+    let yes: &CFType = objc2_core_foundation::CFBoolean::new(true);
+    // SAFETY: `app` is a live element, the attribute a string and the value
+    // a boolean, as the Accessibility API takes them.
+    let error = unsafe { AXUIElementSetAttributeValue(app, &frontmost, yes) };
+    // SAFETY: `app` came of a function of `Create` in its name, which this
+    // releases once.
+    unsafe { CFRelease(app) };
+    error == 0
+}
+
 /// The windows of `pid` on screen at the normal level. A window's owner,
 /// level and bounds can be read without the Screen Recording permission.
 fn normal_windows(pid: libc::pid_t) -> Vec<CFRetained<Description>> {
@@ -149,6 +207,11 @@ fn size(window: &Description) -> Option<Size> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_window_lies_far_off_every_display() {
+        assert_eq!(owner_at(-1.0e6, -1.0e6), None);
+    }
 
     #[test]
     fn a_test_process_has_no_window() {

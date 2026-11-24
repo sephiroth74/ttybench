@@ -185,6 +185,35 @@ impl Launched {
         process::tree(self.root)
     }
 
+    /// Makes its window the one on top at `x`, `y`, where a pointer's
+    /// events go: its app brought to the front where another app's window
+    /// covers it, as macOS keeps the app in front that someone uses as a
+    /// terminal launches, until its window is there or past `deadline`;
+    /// why not.
+    pub fn front_at(&self, x: f64, y: f64, deadline: Duration) -> Result<(), String> {
+        let until = Instant::now() + deadline;
+        loop {
+            let tree = self.tree();
+            let owner = windows::owner_at(x, y);
+            if owner.is_some_and(|owner| tree.contains(&owner)) {
+                return Ok(());
+            }
+            if Instant::now() >= until {
+                let other = owner
+                    .and_then(|owner| process::name(owner).ok())
+                    .unwrap_or_else(|| "no window".to_owned());
+                return Err(format!(
+                    "{}'s window is not in front where the pointer goes, {other}'s is: leave the Mac alone as it measures, of no app in front of the terminal's",
+                    self.name
+                ));
+            }
+            if let Some(window) = self.window() {
+                windows::bring_to_front(window.pid);
+            }
+            thread::sleep(POLL * 10);
+        }
+    }
+
     /// Its largest window on screen, of any process of its tree.
     pub fn window(&self) -> Option<windows::Window> {
         windows::window_of(&self.tree())
@@ -274,7 +303,10 @@ mod tests {
     fn an_apps_copies_found_through_a_link() {
         let dir = folder("link");
         let real = dir.join("real");
-        let executables = real.join("X.app/Contents/MacOS");
+        // A folder of an app's layout but not its name: a folder named
+        // `.app` of no `Info.plist` is one that the system's checks tell
+        // damaged as its executable runs.
+        let executables = real.join("X/Contents/MacOS");
         std::fs::create_dir_all(&executables).unwrap();
         std::fs::copy("/bin/sleep", executables.join("x")).unwrap();
         std::os::unix::fs::symlink(&real, dir.join("link")).unwrap();
@@ -288,7 +320,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(2);
         let mut found = false;
         while !found && Instant::now() < deadline {
-            found = running_copies(&dir.join("link/X.app")).contains(&pid);
+            found = running_copies(&dir.join("link/X")).contains(&pid);
             thread::sleep(POLL);
         }
         let _ = child.kill();

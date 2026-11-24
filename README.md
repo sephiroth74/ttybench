@@ -406,7 +406,7 @@ Each round launches the terminal running `ttybench-payload`, which prints 50 000
 
 - **`--by pixels`**, the default, scrolls as a trackpad does: each period of 2 seconds swipes up `--amplitude` points, 200 by default, over half a second, `--rate` events a second, 120 by default, then lets its momentum slow over the next half second, then the same down, so that the view moves throughout. **`--by lines`** turns a mouse wheel a step at a time, 20 steps a second, up for a second, then down.
 - **The frames are those that the window server took**, as it took them. Which of them each refresh of the display showed is the display's own record: a terminal that draws in step with the display's refreshes gives frames a whole number of refreshes apart, one that draws at a pace of its own gives frames between them, of which a refresh shows the last.
-- **Leave the mouse and the trackpad alone**: the scroll goes through the window server to the window under the pointer, which ttybench moves to the window's middle.
+- **Leave the mouse and the trackpad alone**: the scroll goes through the window server to the window under the pointer, which ttybench moves to the window's middle. macOS keeps the app that someone uses in front as a terminal launches: ttybench brings the terminal's app to the front through the Accessibility permission where another app's window covers it, and stops, of its reason, where it can't. `motion`, and `gpu` and `frames` of a scroll do alike.
 - **`--source` and `--awake`** are latency's.
 
 ### gpu

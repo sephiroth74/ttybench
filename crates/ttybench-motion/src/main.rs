@@ -38,6 +38,10 @@ use ttybench_core::{stats, terminal};
 /// How long a round waits for the terminal's window and its payload.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long the terminal's window takes to come to the front where the
+/// pointer's events go, at most.
+const FRONT: Duration = Duration::from_secs(3);
+
 /// How long a terminal takes to quit, at most.
 const QUIT: Duration = Duration::from_secs(5);
 
@@ -298,6 +302,7 @@ fn record(
         Kind::Drag => (frame.x + frame.width / 2.0, frame.y + 12.0),
         Kind::Resize => (frame.x + frame.width - 2.0, frame.y + frame.height - 2.0),
     };
+    launched.front_at(x, y, FRONT)?;
     let limit = Duration::from_secs_f64(settings.seconds + 3.0);
     let recording = Recording::start(TEMPLATE, Target::All, limit, path)?;
     thread::sleep(Duration::from_millis(500));

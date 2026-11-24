@@ -47,6 +47,10 @@ use ttybench_core::{stats, terminal};
 /// lines.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long the terminal's window takes to come to the front where the
+/// pointer's events go, at most.
+const FRONT: Duration = Duration::from_secs(3);
+
 /// How long a terminal takes to quit, at most.
 const QUIT: Duration = Duration::from_secs(5);
 
@@ -265,6 +269,7 @@ fn measure(
         window.frame.x + window.frame.width / 2.0,
         window.frame.y + window.frame.height / 2.0,
     );
+    launched.front_at(x, y, FRONT)?;
     pattern::away(x, y);
     let mut last = None;
     while let Some(frame) = capture.try_next() {
