@@ -9,6 +9,7 @@ cycles = 3                           # each of another order: a multiple of the 
 season = 0                           # launches of each terminal before the first run, not counted
 # rounds = 5                         # each run's --rounds, unless it says
 # timeout = 1800                     # the seconds that a run may take before it is stopped
+# ab = { a = "lokyr-1.4", b = "lokyr-1.5" }  # two copies compared, A before and B after
 
 [[run]]
 tool = "startup"
@@ -62,3 +63,15 @@ sudo = true
 tool = "motion"
 args = ["--kind", "drag", "--seconds", "10"]
 rounds = 1
+
+# Budgets, which the report tells held or not.
+[[budget]]
+tool = "startup"
+metric = "ready_ms"
+at-most = 1000
+
+[[budget]]
+tool = "throughput"
+metric = "written_mib_s"
+conditions = { text = "plain" }
+at-least = 100

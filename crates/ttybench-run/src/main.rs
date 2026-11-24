@@ -5,11 +5,12 @@
 //! as a process of its own, in a folder of its own in the session's, whose
 //! records the coordinator gathers; a run that fails is told, and the
 //! session goes on; `--resume` takes up a session that was cut off, of the
-//! runs that did not end well.
+//! runs that did not end well. At its end, `ttybench report` writes the
+//! session's report into its folder, unless `--no-report`.
 //!
 //! ```text
-//! ttybench run <session.toml> [--folder <folder>] [--dry-run]
-//! ttybench run --resume <folder>
+//! ttybench run <session.toml> [--folder <folder>] [--dry-run] [--no-report]
+//! ttybench run --resume <folder> [--no-report]
 //! ```
 
 mod log;
@@ -61,7 +62,7 @@ const DRAIN: Duration = Duration::from_secs(1);
 const STEP: Duration = Duration::from_millis(100);
 
 /// How the coordinator runs.
-const USAGE: &str = "ttybench run <session.toml> [--folder <folder>] [--dry-run]\n       ttybench run --resume <folder>";
+const USAGE: &str = "ttybench run <session.toml> [--folder <folder>] [--dry-run] [--no-report]\n       ttybench run --resume <folder> [--no-report]";
 
 fn main() -> ExitCode {
     match run() {
@@ -153,7 +154,7 @@ fn run() -> Result<bool, String> {
         .first()
         .is_some_and(|arg| !arg.starts_with("--"))
         .then(|| PathBuf::from(args.remove(0)));
-    let options = Args::parse(args, &["folder", "resume"], &["dry-run"])?;
+    let options = Args::parse(args, &["folder", "resume"], &["dry-run", "no-report"])?;
     let opened = match (file, options.value("resume")) {
         (Some(file), None) => Opened::new(&file, options.value("folder"))?,
         (None, Some(_)) if options.value("folder").is_some() => {
@@ -237,12 +238,18 @@ fn run() -> Result<bool, String> {
         .iter()
         .filter(|step| !done.contains(&step.id))
         .collect();
+    let report = |folder: &Path| {
+        if !options.flag("no-report") {
+            write_report(folder, &dirs);
+        }
+    };
     if pending.is_empty() {
         let count = log::gather(folder).map_err(|error| error.to_string())?;
         println!(
             "every run of {} has ended, of {count} records",
             folder.display()
         );
+        report(folder);
         return Ok(true);
     }
     if opened.resume {
@@ -343,7 +350,30 @@ fn run() -> Result<bool, String> {
             folder.display()
         );
     }
+    report(folder);
     Ok(failed == 0)
+}
+
+/// Writes the report of the session in `folder` of `ttybench-report`,
+/// found in `dirs`; a report that fails is told, the session's end
+/// unchanged.
+fn write_report(folder: &Path, dirs: &[PathBuf]) {
+    let Some(binary) = tools::find("report", dirs) else {
+        eprintln!(
+            "ttybench-run: there is no {}report beside ttybench-run or on the PATH: no report",
+            tools::PREFIX
+        );
+        return;
+    };
+    match Command::new(&binary)
+        .arg(folder)
+        .stdin(Stdio::null())
+        .status()
+    {
+        Ok(status) if status.success() => {}
+        Ok(status) => eprintln!("ttybench-run: the report failed: {status}"),
+        Err(error) => eprintln!("ttybench-run: the report does not start: {error}"),
+    }
 }
 
 /// The entry of `step` skipped, as its terminal has not its run's feature

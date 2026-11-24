@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use ttybench_core::budget::{self, Ab, Budget};
 use ttybench_core::config::expand_home;
 use ttybench_core::tools;
 
@@ -50,6 +51,13 @@ pub struct Session {
     /// The runs, in their order of each cycle.
     #[serde(rename = "run", default)]
     pub runs: Vec<Run>,
+    /// Two of its terminals compared, A before and B after, as two copies
+    /// of one, which the report tells each metric's change of.
+    #[serde(default)]
+    pub ab: Option<Ab>,
+    /// Its budgets, which the report tells held or not.
+    #[serde(rename = "budget", default)]
+    pub budgets: Vec<Budget>,
 }
 
 /// A tool that a session runs, of its arguments.
@@ -166,7 +174,7 @@ impl Session {
                 }
             }
         }
-        Ok(())
+        budget::check(self.ab.as_ref(), &self.budgets, &self.terminals)
     }
 
     /// The terminals of `run`, in their order of the first cycle.
@@ -410,6 +418,19 @@ mod tests {
     }
 
     #[test]
+    fn the_example_runs_of_the_example_terminals() {
+        let terminals: ttybench_core::config::Terminals = config::parse(
+            Path::new("terminals.toml"),
+            include_str!("../../../examples/terminals.toml"),
+        )
+        .unwrap();
+        let known = terminals.terminals.keys().cloned().collect();
+        let example = session(include_str!("../../../examples/session.toml"));
+        example.check(&known).unwrap();
+        assert_eq!(example.budgets.len(), 2);
+    }
+
+    #[test]
     fn a_session_that_cannot_run_is_refused() {
         let refused = [
             (
@@ -448,6 +469,14 @@ mod tests {
             (
                 "terminals = [\"a\"]\n[[run]]\ntool = \"startup\"\nterminals = [\"b\"]\n",
                 "not among",
+            ),
+            (
+                "terminals = [\"a\", \"b\"]\nab = { a = \"a\", b = \"c\" }\n[[run]]\ntool = \"startup\"\n",
+                "the A/B names `c`",
+            ),
+            (
+                "terminals = [\"a\"]\n[[run]]\ntool = \"startup\"\n[[budget]]\nmetric = \"ready_ms\"\nchange-at-most = 5\n",
+                "of no A/B",
             ),
         ];
         for (text, why) in refused {

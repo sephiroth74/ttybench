@@ -1,6 +1,6 @@
 //! A session of two terminals and two tools, of a probe of a script's in
 //! place of the tools, which opens no window: its orders, its records,
-//! a run that fails, a run skipped, and the session taken up.
+//! a run that fails, a run skipped, the session taken up, and its report.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -32,6 +32,10 @@ printf '{"tool":"%s","terminal":"%s","metric":"rounds","unit":"n","samples":[%s]
   "$(basename "$0")" "$terminal" "${rounds:-0}" >> "$session/records.jsonl"
 echo "probed $terminal"
 "#;
+
+/// A report of a script's, where the real one is not built beside the
+/// coordinator.
+const REPORT: &str = "#!/bin/sh\necho reported > \"$1/report.md\"\n";
 
 const TERMINALS: &str = r#"
 [terminals.a]
@@ -69,6 +73,9 @@ fn place(name: &str) -> PathBuf {
         std::fs::write(&path, PROBE).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
+    let report = dir.join("bin").join("ttybench-report");
+    std::fs::write(&report, REPORT).unwrap();
+    std::fs::set_permissions(&report, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::write(dir.join("terminals.toml"), TERMINALS).unwrap();
     std::fs::write(dir.join("session.toml"), SESSION).unwrap();
     dir
@@ -160,6 +167,7 @@ fn a_session_in_balanced_orders_cut_off_and_taken_up() {
         "terminals.toml",
         "machine.json",
         "runs/c1-r1-probe-a/output.txt",
+        "report.md",
     ] {
         assert!(out.join(kept).exists(), "{kept}");
     }
@@ -191,6 +199,12 @@ fn a_session_in_balanced_orders_cut_off_and_taken_up() {
     assert_eq!(ended.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&ended.stdout).contains("every run"));
     assert_eq!(lines(&out.join("records.jsonl")).len(), 8);
+    assert!(out.join("report.md").exists());
+
+    std::fs::remove_file(out.join("report.md")).unwrap();
+    let quiet = coordinator(&dir, &["--resume", "out", "--no-report"], None);
+    assert_eq!(quiet.status.code(), Some(0));
+    assert!(!out.join("report.md").exists());
 
     std::fs::remove_dir_all(&dir).unwrap();
 }

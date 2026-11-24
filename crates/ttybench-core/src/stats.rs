@@ -1,6 +1,7 @@
 //! A metric's samples summed up: their median, percentiles, mean and
-//! spread, and a bootstrap interval of the median, so that two terminals,
-//! or two copies of one, compare beyond their noise.
+//! spread, and a bootstrap interval of the median, and of a statistic's
+//! change between two sets of samples, so that two terminals, or two
+//! copies of one, compare beyond their noise.
 
 use serde::{Deserialize, Serialize};
 
@@ -80,17 +81,99 @@ fn median_interval(sorted: &[f64]) -> (f64, f64) {
         return (sorted[0], sorted[0]);
     }
     let mut rng = XorShift(0x9E37_79B9_7F4A_7C15 ^ sorted.len() as u64);
-    let mut medians = Vec::with_capacity(RESAMPLES);
     let mut resample = vec![0.0; sorted.len()];
-    for _ in 0..RESAMPLES {
-        for slot in &mut resample {
-            *slot = sorted[rng.below(sorted.len())];
-        }
-        resample.sort_by(f64::total_cmp);
-        medians.push(percentile(&resample, 50.0));
-    }
+    let mut medians: Vec<f64> = (0..RESAMPLES)
+        .map(|_| Stat::Median.of_sorted(rng.resample(sorted, &mut resample)))
+        .collect();
     medians.sort_by(f64::total_cmp);
     (percentile(&medians, 2.5), percentile(&medians, 97.5))
+}
+
+/// A statistic of a metric's samples, as a budget names it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Stat {
+    /// The median.
+    #[default]
+    Median,
+    /// The mean.
+    Mean,
+    /// The 95th percentile.
+    P95,
+    /// The 99th percentile.
+    P99,
+    /// The least.
+    Min,
+    /// The greatest.
+    Max,
+}
+
+impl Stat {
+    /// Its name, as a session's file writes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Median => "median",
+            Self::Mean => "mean",
+            Self::P95 => "p95",
+            Self::P99 => "p99",
+            Self::Min => "min",
+            Self::Max => "max",
+        }
+    }
+
+    /// Its value of `sorted`, ascending and not empty.
+    pub fn of_sorted(self, sorted: &[f64]) -> f64 {
+        match self {
+            Self::Median => percentile(sorted, 50.0),
+            Self::Mean => sorted.iter().sum::<f64>() / sorted.len() as f64,
+            Self::P95 => percentile(sorted, 95.0),
+            Self::P99 => percentile(sorted, 99.0),
+            Self::Min => sorted[0],
+            Self::Max => sorted[sorted.len() - 1],
+        }
+    }
+
+    /// Its value of `summary`.
+    pub fn of(self, summary: &Summary) -> f64 {
+        match self {
+            Self::Median => summary.median,
+            Self::Mean => summary.mean,
+            Self::P95 => summary.p95,
+            Self::P99 => summary.p99,
+            Self::Min => summary.min,
+            Self::Max => summary.max,
+        }
+    }
+}
+
+/// The 95 % bootstrap interval of `stat` of `b` less `stat` of `a`, of
+/// their finite samples, each resampled apart, [`RESAMPLES`] times of a
+/// seed of their own, the same for the same samples; none of either
+/// empty.
+pub fn change_interval(a: &[f64], b: &[f64], stat: Stat) -> Option<(f64, f64)> {
+    let sorted = |samples: &[f64]| {
+        let mut sorted: Vec<f64> = samples
+            .iter()
+            .copied()
+            .filter(|value| value.is_finite())
+            .collect();
+        sorted.sort_by(f64::total_cmp);
+        sorted
+    };
+    let (a, b) = (sorted(a), sorted(b));
+    if a.is_empty() || b.is_empty() {
+        return None;
+    }
+    let mut rng = XorShift(0x9E37_79B9_7F4A_7C15 ^ ((a.len() as u64) << 32 | b.len() as u64));
+    let (mut resample_a, mut resample_b) = (vec![0.0; a.len()], vec![0.0; b.len()]);
+    let mut changes: Vec<f64> = (0..RESAMPLES)
+        .map(|_| {
+            let of_a = stat.of_sorted(rng.resample(&a, &mut resample_a));
+            stat.of_sorted(rng.resample(&b, &mut resample_b)) - of_a
+        })
+        .collect();
+    changes.sort_by(f64::total_cmp);
+    Some((percentile(&changes, 2.5), percentile(&changes, 97.5)))
 }
 
 /// A small generator of pseudo-random numbers, xorshift64*, enough for a
@@ -98,6 +181,15 @@ fn median_interval(sorted: &[f64]) -> (f64, f64) {
 struct XorShift(u64);
 
 impl XorShift {
+    /// `into` filled of `sorted`'s values drawn with replacement, sorted.
+    fn resample<'a>(&mut self, sorted: &[f64], into: &'a mut [f64]) -> &'a [f64] {
+        for slot in into.iter_mut() {
+            *slot = sorted[self.below(sorted.len())];
+        }
+        into.sort_by(f64::total_cmp);
+        into
+    }
+
     /// A number below `bound`.
     fn below(&mut self, bound: usize) -> usize {
         self.0 ^= self.0 >> 12;
@@ -134,6 +226,43 @@ mod tests {
             super::summary(&samples).unwrap().median_interval,
             (low, high)
         );
+    }
+
+    #[test]
+    fn a_change_beyond_the_noise_and_none() {
+        let a: Vec<f64> = (0..50).map(|at| 100.0 + f64::from(at % 5)).collect();
+        let b: Vec<f64> = a.iter().map(|value| value + 10.0).collect();
+        let (low, high) = change_interval(&a, &b, Stat::Median).unwrap();
+        assert!(low > 5.0 && high < 15.0, "{low} {high}");
+        let (low, high) = change_interval(&a, &a, Stat::Median).unwrap();
+        assert!(low <= 0.0 && 0.0 <= high, "{low} {high}");
+        // The same samples, the same interval.
+        assert_eq!(
+            change_interval(&a, &b, Stat::P95),
+            change_interval(&a, &b, Stat::P95)
+        );
+        assert_eq!(change_interval(&a, &[], Stat::Median), None);
+        assert_eq!(change_interval(&[f64::NAN], &a, Stat::Median), None);
+    }
+
+    #[test]
+    fn each_statistic_of_its_samples() {
+        let sorted: Vec<f64> = (1..=100).map(f64::from).collect();
+        let summary = summary(&sorted).unwrap();
+        for stat in [
+            Stat::Median,
+            Stat::Mean,
+            Stat::P95,
+            Stat::P99,
+            Stat::Min,
+            Stat::Max,
+        ] {
+            assert!(
+                (stat.of_sorted(&sorted) - stat.of(&summary)).abs() < 1e-9,
+                "{}",
+                stat.name()
+            );
+        }
     }
 
     #[test]

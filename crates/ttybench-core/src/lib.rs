@@ -3,6 +3,7 @@
 //! runs as `ttybench <tool>`, as `git` runs its commands.
 
 pub mod awake;
+pub mod budget;
 pub mod capture;
 pub mod cli;
 pub mod clock;

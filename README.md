@@ -83,6 +83,58 @@ ttybench run session.toml
 - **`feature`** on a run measures the terminals that have that feature, of it on, and skips the others, without launching them: `--dry-run` tells them, and the session's log keeps them as skipped. A run of no `feature` measures each terminal's base.
 - **`season`** launches each terminal that many times before the first run, not counted, as a terminal just built or installed starts slower for its first launches.
 - **`sudo = true`** on a run that needs `sudo`: the session asks for it once and keeps it.
+- **The report**: at its end, the session writes its report into its folder, as the next section tells, unless `--no-report`.
+
+## Read a session's report
+
+`ttybench report` sums up a session's folder: `report.md` for you to read, and `report.json` of the same figures for the charts and your own tools. The coordinator writes both at a session's end; run it alone on any session's folder, a tool's alone too:
+
+```sh
+ttybench report sessions/2026-11-24-1405
+ttybench report sessions/2026-11-24-1405 --out -   # the Markdown to the terminal, no file written
+```
+
+- **A table of each metric** of each tool, of the records of the same conditions alone: each terminal's median and the 95 % bootstrap interval of the median, the 95th percentile, the mean and the standard deviation, the least and the most, the samples, and each cycle's median. A run of a `feature` makes its own tables, which name the feature, and its terminals skipped are told in them.
+- **The runs that measured nothing**, failed or skipped of no table to tell them in, close the report, of their reason.
+
+### Compare two copies of a terminal
+
+An A/B compares two terminals of one session, as a release and its next build, each described in your terminals' file of its own app:
+
+```toml
+terminals = ["lokyr-1.4", "lokyr-1.5"]
+ab = { a = "lokyr-1.4", b = "lokyr-1.5" }   # A before, B after
+```
+
+The report's A/B table gives each metric's median of A and of B, the change, B's less A's, in the unit and in percent, and its 95 % bootstrap interval: a change whose interval holds 0 is within the noise; one beyond it is better or worse, where the metric has a better way, or higher or lower. `ttybench report <folder> --a <name> --b <name>` compares two others.
+
+Measure both copies in one session: two sessions' figures differ of the machine's state more than many changes do.
+
+### Budgets
+
+A budget is a limit of a metric, which the report tells held or not:
+
+```toml
+[[budget]]
+tool = "startup"
+metric = "ready_ms"
+at-most = 300                # every terminal's median, in the metric's unit
+
+[[budget]]
+metric = "latency_ms"
+terminal = "lokyr-1.5"
+stat = "p99"                 # median, mean, p95, p99, min or max; the median by default
+at-most = 75
+
+[[budget]]
+metric = "written_mib_s"
+conditions = { text = "plain" }
+change-at-least = "-5%"      # B's median at most 5 % below A's
+```
+
+- **`metric`** names the metric, as the tables' small line shows it; `tool` and `conditions` narrow the records that it judges, each condition of the value that the records' has; `terminal` narrows the terminals.
+- **`at-most` and `at-least`** limit each terminal's statistic. **`change-at-most` and `change-at-least`** limit its change from the A/B's A to its B, in the metric's unit, or in percent of A's, as `"5%"`: they need an `ab`.
+- `ttybench run` checks the budgets as it starts, so that a typo doesn't wait for the session's end.
 
 ## The tools
 
