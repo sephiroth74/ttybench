@@ -39,3 +39,8 @@ rounds = 1
 tool = "latency"
 args = ["--keys", "200", "--flood"]
 rounds = 1
+
+[[run]]
+tool = "scroll"
+args = ["--by", "pixels", "--seconds", "10"]
+rounds = 2

@@ -1,5 +1,5 @@
-//! The keys that a tool types into a terminal, and its clicks, as a hand
-//! would: posted to
+//! The keys that a tool types into a terminal, its clicks and its scrolls,
+//! as a hand would: posted to
 //! the terminal's process alone, so that none reaches another app,
 //! whichever is in front, or, as a keyboard's, to the window server, which
 //! sends them to the app in front. Posting them takes the Accessibility
@@ -10,7 +10,10 @@ use std::thread;
 use std::time::Duration;
 
 use objc2_core_foundation::CGPoint;
-use objc2_core_graphics::{CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton};
+use objc2_core_graphics::{
+    CGEvent, CGEventField, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton,
+    CGScrollEventUnit,
+};
 
 use crate::config::Key;
 
@@ -183,6 +186,65 @@ pub fn click(x: f64, y: f64) {
         CGEvent::post(CGEventTapLocation::HIDEventTap, event.as_deref());
         thread::sleep(PAUSE);
     }
+}
+
+/// Moves the pointer to `x`, `y`, in points from the top left of the main
+/// display, through the window server.
+pub fn point(x: f64, y: f64) {
+    let event = CGEvent::new_mouse_event(
+        None,
+        CGEventType::MouseMoved,
+        CGPoint { x, y },
+        CGMouseButton::Left,
+    );
+    CGEvent::post(CGEventTapLocation::HIDEventTap, event.as_deref());
+}
+
+/// A scroll's event: a trackpad's, of its precise pixels and its phases,
+/// or a mouse wheel's, of lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scroll {
+    /// `pixels` up, down where negative, of the fingers' `phase` and the
+    /// momentum's `momentum`, as macOS numbers them: began 1, changed 2
+    /// and ended 4 of the fingers', begin 1, continue 2 and end 3 of the
+    /// momentum's, 0 of none.
+    Pixels {
+        /// The pixels.
+        pixels: i32,
+        /// The fingers' phase.
+        phase: i64,
+        /// The momentum's phase.
+        momentum: i64,
+    },
+    /// A wheel's step of these lines up, down where negative.
+    Lines(i32),
+}
+
+/// Posts `scroll` at `x`, `y`, in points from the top left of the main
+/// display, through the window server, to the window there.
+pub fn scroll(x: f64, y: f64, scroll: Scroll) {
+    let (unit, delta) = match scroll {
+        Scroll::Pixels { pixels, .. } => (CGScrollEventUnit::Pixel, pixels),
+        Scroll::Lines(lines) => (CGScrollEventUnit::Line, lines),
+    };
+    let Some(event) = CGEvent::new_scroll_wheel_event2(None, unit, 1, delta, 0, 0) else {
+        return;
+    };
+    let event = Some(&*event);
+    CGEvent::set_location(event, CGPoint { x, y });
+    if let Scroll::Pixels {
+        phase, momentum, ..
+    } = scroll
+    {
+        CGEvent::set_integer_value_field(event, CGEventField::ScrollWheelEventIsContinuous, 1);
+        CGEvent::set_integer_value_field(event, CGEventField::ScrollWheelEventScrollPhase, phase);
+        CGEvent::set_integer_value_field(
+            event,
+            CGEventField::ScrollWheelEventMomentumPhase,
+            momentum,
+        );
+    }
+    CGEvent::post(CGEventTapLocation::HIDEventTap, event);
 }
 
 /// Posts the key `code`, down or up, of `flags`, to the process `pid`, of

@@ -152,6 +152,22 @@ Both measured two terminals in one session, on a display at 60 Hz, the Mac left 
 - **Beside a flood**, Ghostty draws without a pause, and the phase matters little: within half a millisecond. kitty's latency beside a flood depends on how much of the flood it has still to take, and spreads from 16 to 520 ms: the medians of 200 keys lie 64 ms apart, the 95th percentiles 17.
 - ttybench then struck letters on the window's middle row; it strikes `.` on the first row since, which a check of Ghostty's every phase measured 2.5 ms below Typometer's.
 
+### scroll
+
+How smoothly a terminal scrolls: the frames a second that it shows while you scroll, and how steady they come.
+
+```sh
+ttybench scroll --terminal ghostty --by pixels --seconds 10
+ttybench scroll --terminal ghostty --by lines
+```
+
+Each round launches the terminal running `ttybench-payload`, which prints 50 000 numbered lines, then scrolls its window and captures it, counting the frames that show the text moved, and the gaps between them.
+
+- **`--by pixels`**, the default, scrolls as a trackpad does: each period of 2 seconds swipes up `--amplitude` points, 200 by default, over half a second, `--rate` events a second, 120 by default, then lets its momentum slow over the next half second, then the same down, so that the view moves throughout. **`--by lines`** turns a mouse wheel a step at a time, 20 steps a second, up for a second, then down.
+- **The frames are those that the window server took**, as it took them. Which of them each refresh of the display showed is the display's own record: a terminal that draws in step with the display's refreshes gives frames a whole number of refreshes apart, one that draws at a pace of its own gives frames between them, of which a refresh shows the last.
+- **Leave the mouse and the trackpad alone**: the scroll goes through the window server to the window under the pointer, which ttybench moves to the window's middle.
+- **`--source` and `--presence`** are latency's.
+
 ## License
 
 MIT, as [LICENSE](LICENSE) says.

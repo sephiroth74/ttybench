@@ -7,7 +7,7 @@
 //! ```text
 //! ttybench-payload [--fifo <path>] [--exit] <workload> [options]
 //!   rest  [--seconds <n>]                 rest, of no output
-//!   lines [--count <n>] [--width <n>]     print lines of a width
+//!   lines [--count <n>] [--width <n>]     print lines of a width, numbered
 //!   cat   --file <path>                   print a file, timed to its last byte
 //!   keys  [--count <n>] [--echo tty|payload] [--line <n>]
 //!                                         read keys, each told
@@ -182,12 +182,15 @@ fn run(workload: &Workload, events: &mut Events) -> io::Result<Value> {
             Ok(json!({ "event": "done", "workload": "rest", "time_ns": now_ns() }))
         }
         Workload::Lines { count, width } => {
-            let line: String = (0..*width)
+            // Each line's letters start a letter on from the last's, so that
+            // no two lines near each other look alike.
+            let letters: String = (0..*width + 26)
                 .map(|at| char::from(b'a' + u8::try_from(at % 26).unwrap_or(0)))
                 .collect();
             let started = now_ns();
             for at in 0..*count {
-                writeln!(out, "{at:>8} {line}")?;
+                let from = usize::try_from(at % 26).unwrap_or(0);
+                writeln!(out, "{at:>8} {}", &letters[from..from + *width])?;
             }
             out.flush()?;
             let ended = now_ns();

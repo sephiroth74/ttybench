@@ -126,7 +126,8 @@ fn it_tells_its_grid_and_prints_its_lines() {
     assert!(done["time_ns"].as_u64() >= done["started_ns"].as_u64());
     std::thread::sleep(std::time::Duration::from_millis(100));
     assert!(
-        run.printed().contains("      49 abcdefghij"),
+        run.printed().contains("      49 xyzabcdefg")
+            && run.printed().contains("       0 abcdefghij"),
         "{}",
         run.printed()
     );
