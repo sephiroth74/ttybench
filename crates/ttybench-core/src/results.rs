@@ -154,6 +154,90 @@ pub struct Entry {
     /// reason.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The machine's load around it, if the coordinator read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load: Option<Load>,
+}
+
+/// The machine's load around a run, which tells a run measured beside
+/// another program's work, as a scan of the files' or an update's.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Load {
+    /// The load average of a minute as it started.
+    pub before: f64,
+    /// The load average of a minute as it ended.
+    pub after: f64,
+    /// The busiest processes as it ended, the most first, of their share
+    /// of a core over about the last minute.
+    pub busiest: Vec<Busy>,
+}
+
+/// A process's share of a core.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Busy {
+    /// Its executable's name.
+    pub name: String,
+    /// Its share of a core, in percent.
+    pub cpu_percent: f64,
+}
+
+impl Load {
+    /// The load as a run starts: its average of a minute, of none read as
+    /// none.
+    pub fn starting() -> f64 {
+        load_average().unwrap_or(f64::NAN)
+    }
+
+    /// The load as a run that started of `before` ends.
+    pub fn ending(before: f64) -> Self {
+        Self {
+            before,
+            after: load_average().unwrap_or(f64::NAN),
+            busiest: busiest(BUSIEST, BUSY_PERCENT),
+        }
+    }
+}
+
+/// How many of the busiest processes a run's load tells.
+const BUSIEST: usize = 3;
+
+/// The least share of a core of a process that a run's load tells.
+const BUSY_PERCENT: f64 = 10.0;
+
+/// The machine's load average of a minute.
+pub fn load_average() -> Option<f64> {
+    let mut loads = [0.0f64; 3];
+    // SAFETY: `loads` holds the three values that `getloadavg` writes at
+    // most.
+    let read = unsafe { libc::getloadavg(loads.as_mut_ptr(), 3) };
+    (read >= 1).then_some(loads[0])
+}
+
+/// The `count` busiest processes of `least` percent of a core at least,
+/// the most first, of `ps`'s share of a core, a decaying average of about
+/// a minute, which tells every user's processes of no privilege.
+pub fn busiest(count: usize, least: f64) -> Vec<Busy> {
+    let Ok(output) = Command::new("/bin/ps")
+        .args(["-A", "-o", "%cpu=,comm="])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let mut busy: Vec<Busy> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (cpu, command) = line.trim_start().split_once(' ')?;
+            let name = command.trim().rsplit('/').next()?.to_owned();
+            Some(Busy {
+                name,
+                cpu_percent: cpu.parse().ok()?,
+            })
+        })
+        .filter(|busy| busy.cpu_percent >= least)
+        .collect();
+    busy.sort_by(|a, b| b.cpu_percent.total_cmp(&a.cpu_percent));
+    busy.truncate(count);
+    busy
 }
 
 impl Entry {
@@ -314,6 +398,24 @@ mod tests {
         let error = session.records().unwrap_err();
         assert!(error.to_string().contains(":1:"), "{error}");
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn the_machines_load() {
+        let load = load_average().unwrap();
+        assert!(load.is_finite() && load >= 0.0, "{load}");
+        // ps tells this test's process among the others; the busiest are
+        // sorted, each of its name alone.
+        let busy = busiest(1000, 0.0);
+        assert!(!busy.is_empty());
+        assert!(
+            busy.windows(2)
+                .all(|pair| pair[0].cpu_percent >= pair[1].cpu_percent)
+        );
+        assert!(busy.iter().all(|busy| !busy.name.contains('/')), "{busy:?}");
+        let ended = Load::ending(1.5);
+        assert_eq!(ended.before, 1.5);
+        assert!(ended.busiest.len() <= BUSIEST);
     }
 
     #[test]

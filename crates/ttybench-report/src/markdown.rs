@@ -44,6 +44,9 @@ pub fn render(report: &Report) -> String {
             table(&mut out, group);
         }
     }
+    if !report.runs_log.is_empty() {
+        runs(&mut out, report);
+    }
     if !report.unmeasured.is_empty() {
         out.push_str("## Runs that measured nothing\n\n");
         for run in &report.unmeasured {
@@ -63,6 +66,45 @@ pub fn render(report: &Report) -> String {
     out.truncate(out.trim_end().len());
     out.push('\n');
     out
+}
+
+/// The runs' table: each run's start, length and end, and the machine's
+/// load around it, so that a run beside another program's work tells.
+fn runs(out: &mut String, report: &Report) {
+    out.push_str("## Runs\n\n");
+    out.push_str("Each run's end, the load average of a minute as it started and as it ended, and the busiest processes as it ended, of their share of a core over about the last minute: a run beside another program's work, as a scan of the files, may measure otherwise.\n\n");
+    out.push_str(
+        "| Run | Started | Seconds | | Load | Busiest as it ended |\n|---|---|---|---|---|---|\n",
+    );
+    for entry in &report.runs_log {
+        let how = match entry.status {
+            Status::Done => "done",
+            Status::Failed => "failed",
+            Status::Skipped => "skipped",
+        };
+        let (load, busiest) = entry
+            .load
+            .as_ref()
+            .map_or((String::new(), String::new()), |load| {
+                let busiest: Vec<String> = load
+                    .busiest
+                    .iter()
+                    .map(|busy| format!("{} {:.0} %", cell(&busy.name), busy.cpu_percent))
+                    .collect();
+                (
+                    format!("{:.2} → {:.2}", load.before, load.after),
+                    busiest.join(", "),
+                )
+            });
+        let started = local_seconds(entry.started);
+        let _ = writeln!(
+            out,
+            "| `{}` | {started} | {:.0} | {how} | {load} | {busiest} |",
+            entry.id.replace('`', "'"),
+            entry.seconds
+        );
+    }
+    out.push('\n');
 }
 
 /// The session's line: when, on what, and how its runs ended.
@@ -186,7 +228,7 @@ fn ab(out: &mut String, report: &Report) {
     let _ = writeln!(out, "## A/B: {} against {}\n", cell(&ab.b), cell(&ab.a));
     let _ = writeln!(
         out,
-        "Each metric's median of A, {}, and of B, {}; the change, B's less A's, and its 95 % bootstrap interval: a change whose interval holds 0 is within the noise.\n",
+        "Each metric's median of A, {}, and of B, {}; the change, B's less A's, and its 95 % bootstrap interval, of the runs resampled, then their samples, as a run moves as a whole of the machine's state: a change whose interval holds 0 is within the noise, and a copy of fewer than two runs tells too few.\n",
         cell(&ab.a),
         cell(&ab.b)
     );
@@ -212,7 +254,7 @@ fn ab(out: &mut String, report: &Report) {
             Verdict::Higher => "higher",
             Verdict::Lower => "lower",
             Verdict::WithinNoise => "within the noise",
-            Verdict::TooFew => "too few samples to tell",
+            Verdict::TooFew => "too few runs to tell",
         };
         let _ = writeln!(
             out,
@@ -264,7 +306,7 @@ fn table(out: &mut String, group: &Group) {
     }
     let _ = writeln!(out, "{line}\n");
     let cycles = group.rows.iter().any(|row| !row.cycles.is_empty());
-    out.push_str("| Terminal | Median | 95 % interval of the median | p95 | Mean ± sd | Min … max | Samples |");
+    out.push_str("| Terminal | Median | 95 % interval of the median | p95 | Mean ± sd | Min … max | Samples (runs) |");
     out.push_str(if cycles {
         " Each cycle's median |\n"
     } else {
@@ -277,7 +319,7 @@ fn table(out: &mut String, group: &Group) {
         let summary = &row.summary;
         let _ = write!(
             out,
-            "| {} | {} | {} … {} | {} | {} ± {} | {} … {} | {} |",
+            "| {} | {} | {} … {} | {} | {} ± {} | {} … {} | {} ({}) |",
             cell(&row.terminal),
             digits.format(summary.median),
             digits.format(summary.median_interval.0),
@@ -288,6 +330,7 @@ fn table(out: &mut String, group: &Group) {
             digits.format(summary.min),
             digits.format(summary.max),
             summary.count,
+            row.runs,
         );
         if cycles {
             let medians: Vec<String> = row
@@ -417,12 +460,7 @@ fn cell(text: &str) -> String {
 
 /// The local date and time of `seconds` since 1970, as `2026-11-24 14:05`.
 fn local(seconds: u64) -> String {
-    let time = libc::time_t::try_from(seconds).unwrap_or(libc::time_t::MAX);
-    // SAFETY: `tm` is plain data, of which zeros are a valid value.
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    // SAFETY: both pointers are to live values of their types, which
-    // `localtime_r` reads and writes alone.
-    unsafe { libc::localtime_r(&time, &mut tm) };
+    let tm = local_tm(seconds);
     format!(
         "{:04}-{:02}-{:02} {:02}:{:02}",
         tm.tm_year + 1900,
@@ -431,6 +469,23 @@ fn local(seconds: u64) -> String {
         tm.tm_hour,
         tm.tm_min
     )
+}
+
+/// The local time of `seconds` since 1970 to the second, as `14:05:31`.
+fn local_seconds(seconds: u64) -> String {
+    let tm = local_tm(seconds);
+    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+}
+
+/// The local calendar's fields of `seconds` since 1970.
+fn local_tm(seconds: u64) -> libc::tm {
+    let time = libc::time_t::try_from(seconds).unwrap_or(libc::time_t::MAX);
+    // SAFETY: `tm` is plain data, of which zeros are a valid value.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY: both pointers are to live values of their types, which
+    // `localtime_r` reads and writes alone.
+    unsafe { libc::localtime_r(&time, &mut tm) };
+    tm
 }
 
 #[cfg(test)]
@@ -492,6 +547,7 @@ mod tests {
             status: Status::Skipped,
             code: Some(3),
             error: Some("new has no feature `smooth`".to_owned()),
+            load: None,
         }];
         let budgets: Vec<Budget> = toml_budgets(
             "[[budget]]\nmetric = \"ready_ms\"\nterminal = \"new\"\nat-most = 100\n[[budget]]\nmetric = \"ready_ms\"\nchange-at-most = 0\n[[budget]]\nmetric = \"peak_mib\"\nat-most = 1\n",
@@ -529,17 +585,19 @@ mod tests {
             "## startup\n\n### From the launch to running the payload (ms)\n\n`ready_ms`.\n",
             "| Each cycle's median |\n",
             "| old | 115.0 | ",
-            " | 4 | 105.5, 120.5 |\n",
+            " | 4 (2) | 105.5, 120.5 |\n",
             "| new | 93.0 | ",
-            " | 2 |  |\n",
+            " | 2 (1) |  |\n",
             "### Its rate to the last write (MiB/s)\n\n`written_mib_s`. Conditions: text plain\\|pipe.\n",
             "### Frames a second that moved the text (frames/s), of `smooth`\n\n`frames_per_s`. Of the feature `smooth`.\n",
             "| new | skipped: new has no feature `smooth` | | | | | |\n",
-            " | 1 … 2 | 2 |\n",
+            " | 1 … 2 | 2 (1) |\n",
         ] {
             assert!(text.contains(part), "{part:?} not in:\n{text}");
         }
         assert!(!text.contains("Runs that measured nothing"), "{text}");
+        assert!(text.contains("## Runs\n"), "{text}");
+        assert!(text.contains(" | 60 | skipped |  |  |\n"), "{text}");
         assert!(text.ends_with("|\n") && !text.ends_with("\n\n"), "{text}");
     }
 

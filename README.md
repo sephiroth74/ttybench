@@ -224,7 +224,9 @@ ttybench report sessions/2026-11-24-1405
 ttybench report sessions/2026-11-24-1405 --out -   # the Markdown to the terminal, no file written
 ```
 
-- **A table of each metric** of each tool, of the records of the same conditions alone: each terminal's median and the 95 % bootstrap interval of the median, the 95th percentile, the mean and the standard deviation, the least and the most, the samples, and each cycle's median. A run of a `feature` makes its own tables, which name the feature, and its terminals skipped are told in them.
+- **A table of each metric** of each tool, of the records of the same conditions alone: each terminal's median and the 95 % bootstrap interval of the median, the 95th percentile, the mean and the standard deviation, the least and the most, the samples and the runs that gave them, and each cycle's median. A run of a `feature` makes its own tables, which name the feature, and its terminals skipped are told in them.
+- **Intervals of the runs**: a run moves as a whole of the machine's state, as another program's work beside it raises the processor's clocks, so the intervals resample a terminal's runs first, then each run's samples. A median of one run tells its samples' interval alone.
+- **The runs' table**: each run's start, length and end, the load average of a minute as it started and as it ended, and the busiest processes as it ended, which tell a run measured beside another program's work, as a scan of the files.
 - **The runs that measured nothing**, failed or skipped of no table to tell them in, close the report, of their reason.
 
 ### Compare two copies of a terminal
@@ -236,7 +238,7 @@ terminals = ["lokyr-1.4", "lokyr-1.5"]
 ab = { a = "lokyr-1.4", b = "lokyr-1.5" }   # A before, B after
 ```
 
-The report's A/B table gives each metric's median of A and of B, the change, B's less A's, in the unit and in percent, and its 95 % bootstrap interval: a change whose interval holds 0 is within the noise; one beyond it is better or worse, where the metric has a better way, or higher or lower. `ttybench report <folder> --a <name> --b <name>` compares two others.
+The report's A/B table gives each metric's median of A and of B, the change, B's less A's, in the unit and in percent, and its 95 % bootstrap interval, of each copy's runs resampled, then their samples: a change whose interval holds 0 is within the noise; one beyond it is better or worse, where the metric has a better way, or higher or lower; a copy of fewer than two runs tells too few. Give an A/B several cycles: each copy's runs, interleaved with the other's, meet the machine's states alike. `ttybench report <folder> --a <name> --b <name>` compares two others.
 
 Measure both copies in one session: two sessions' figures differ of the machine's state more than many changes do.
 

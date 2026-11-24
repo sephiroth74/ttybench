@@ -158,6 +158,10 @@ fn a_session_in_balanced_orders_cut_off_and_taken_up() {
             .unwrap()
             .contains("exited of 4:\nno luck for b")
     );
+    // Each run tells the machine's load around it.
+    assert!(log[0]["load"]["before"].is_number(), "{}", log[0]);
+    assert!(log[0]["load"]["after"].is_number());
+    assert!(log[0]["load"]["busiest"].is_array());
     let records = lines(&out.join("records.jsonl"));
     assert_eq!(records.len(), 4);
     assert!(records.iter().all(|record| record["terminal"] == "a"));

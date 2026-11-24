@@ -176,6 +176,92 @@ pub fn change_interval(a: &[f64], b: &[f64], stat: Stat) -> Option<(f64, f64)> {
     Some((percentile(&changes, 2.5), percentile(&changes, 97.5)))
 }
 
+/// The finite samples of each of `clusters`, sorted, of the clusters that
+/// hold any.
+fn sorted_clusters(clusters: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    clusters
+        .iter()
+        .map(|cluster| {
+            let mut sorted: Vec<f64> = cluster
+                .iter()
+                .copied()
+                .filter(|value| value.is_finite())
+                .collect();
+            sorted.sort_by(f64::total_cmp);
+            sorted
+        })
+        .filter(|cluster| !cluster.is_empty())
+        .collect()
+}
+
+/// A resample of `clusters`: as many clusters drawn with replacement, then
+/// each one's samples drawn with replacement, pooled and sorted into
+/// `into`.
+fn resample_clusters<'a>(
+    rng: &mut XorShift,
+    clusters: &[Vec<f64>],
+    into: &'a mut Vec<f64>,
+) -> &'a [f64] {
+    into.clear();
+    for _ in 0..clusters.len() {
+        let cluster = &clusters[rng.below(clusters.len())];
+        for _ in 0..cluster.len() {
+            into.push(cluster[rng.below(cluster.len())]);
+        }
+    }
+    into.sort_by(f64::total_cmp);
+    into
+}
+
+/// The seed of a bootstrap of `clusters`, of their sizes, the same for the
+/// same samples.
+fn seed_of(clusters: &[Vec<f64>]) -> u64 {
+    clusters
+        .iter()
+        .fold(0x9E37_79B9_7F4A_7C15, |seed, cluster| {
+            seed.rotate_left(7) ^ cluster.len() as u64
+        })
+}
+
+/// The 95 % bootstrap interval of `stat` of samples taken in clusters, as
+/// a session's runs, each of its samples: the clusters resampled, then
+/// each one's samples, so that a run that moved as a whole, as of the
+/// machine's work beside it, widens the interval, as a resample of the
+/// samples alone would not. None of no sample.
+pub fn clustered_interval(clusters: &[Vec<f64>], stat: Stat) -> Option<(f64, f64)> {
+    let clusters = sorted_clusters(clusters);
+    if clusters.is_empty() {
+        return None;
+    }
+    let mut rng = XorShift(seed_of(&clusters));
+    let mut resample = Vec::new();
+    let mut values: Vec<f64> = (0..RESAMPLES)
+        .map(|_| stat.of_sorted(resample_clusters(&mut rng, &clusters, &mut resample)))
+        .collect();
+    values.sort_by(f64::total_cmp);
+    Some((percentile(&values, 2.5), percentile(&values, 97.5)))
+}
+
+/// The 95 % bootstrap interval of `stat` of `b` less `stat` of `a`, each
+/// of samples taken in clusters, as runs, each side resampled apart as
+/// [`clustered_interval`] resamples it. None of either of no sample.
+pub fn clustered_change_interval(a: &[Vec<f64>], b: &[Vec<f64>], stat: Stat) -> Option<(f64, f64)> {
+    let (a, b) = (sorted_clusters(a), sorted_clusters(b));
+    if a.is_empty() || b.is_empty() {
+        return None;
+    }
+    let mut rng = XorShift(seed_of(&a) ^ seed_of(&b).rotate_left(32));
+    let (mut resample_a, mut resample_b) = (Vec::new(), Vec::new());
+    let mut changes: Vec<f64> = (0..RESAMPLES)
+        .map(|_| {
+            let of_a = stat.of_sorted(resample_clusters(&mut rng, &a, &mut resample_a));
+            stat.of_sorted(resample_clusters(&mut rng, &b, &mut resample_b)) - of_a
+        })
+        .collect();
+    changes.sort_by(f64::total_cmp);
+    Some((percentile(&changes, 2.5), percentile(&changes, 97.5)))
+}
+
 /// A small generator of pseudo-random numbers, xorshift64*, enough for a
 /// bootstrap's resamples, of no crate.
 struct XorShift(u64);
@@ -243,6 +329,43 @@ mod tests {
         );
         assert_eq!(change_interval(&a, &[], Stat::Median), None);
         assert_eq!(change_interval(&[f64::NAN], &a, Stat::Median), None);
+    }
+
+    #[test]
+    fn runs_that_moved_as_a_whole_widen_the_interval() {
+        // Two runs each, of 200 samples about 12 or 16: A's two runs one
+        // of each, B's both of 16. The samples alone tell B slower beyond
+        // their noise; the runs, resampled, tell too few runs to say so.
+        let run = |centre: f64| -> Vec<f64> {
+            (0..200)
+                .map(|at| centre + f64::from(at % 5) * 0.1)
+                .collect()
+        };
+        let a = vec![run(12.0), run(16.0)];
+        let b = vec![run(16.0), run(16.0)];
+        let flat_a: Vec<f64> = a.concat();
+        let flat_b: Vec<f64> = b.concat();
+        let (low, _) = change_interval(&flat_a, &flat_b, Stat::Median).unwrap();
+        assert!(low > 0.0, "{low}");
+        let (low, high) = clustered_change_interval(&a, &b, Stat::Median).unwrap();
+        assert!(low <= 0.0 && 0.0 < high, "{low} {high}");
+        // Runs alike, a change beyond them told.
+        let slower: Vec<Vec<f64>> = (0..4).map(|_| run(16.0)).collect();
+        let quicker: Vec<Vec<f64>> = (0..4).map(|_| run(12.0)).collect();
+        let (low, high) = clustered_change_interval(&quicker, &slower, Stat::Median).unwrap();
+        assert!(low > 3.0 && high < 5.0, "{low} {high}");
+        let (low, high) = clustered_interval(&a, Stat::Median).unwrap();
+        assert!(low < 13.0 && high > 15.0, "{low} {high}");
+        // The same samples, the same interval; no sample, none.
+        assert_eq!(
+            clustered_interval(&a, Stat::Median),
+            clustered_interval(&a, Stat::Median)
+        );
+        assert_eq!(
+            clustered_interval(&[vec![], vec![f64::NAN]], Stat::Median),
+            None
+        );
+        assert_eq!(clustered_change_interval(&a, &[], Stat::Median), None);
     }
 
     #[test]

@@ -56,6 +56,8 @@ pub struct Report {
     /// The runs that measured nothing: failed, or skipped of no group to
     /// tell it in.
     pub unmeasured: Vec<Unmeasured>,
+    /// Each run's last end, in their order, of its load around it.
+    pub runs_log: Vec<Entry>,
 }
 
 /// How a session's runs ended, each of its last end.
@@ -115,9 +117,15 @@ pub struct Row {
     pub summary: Summary,
     /// The median of each cycle, of more than one.
     pub cycles: Vec<CycleMedian>,
+    /// How many runs gave its samples, a record each.
+    pub runs: usize,
     /// The samples, of every record, in their order.
     #[serde(skip)]
     pub samples: Vec<f64>,
+    /// The samples of each run, a record each, which the intervals
+    /// resample first, as a run moves as a whole of the machine's state.
+    #[serde(skip)]
+    pub clusters: Vec<Vec<f64>>,
 }
 
 /// A cycle's median.
@@ -149,7 +157,8 @@ pub struct AbChange {
     pub change: f64,
     /// The change in percent of A's, of an A not 0.
     pub percent: Option<f64>,
-    /// The 95 % bootstrap interval of the change.
+    /// The 95 % bootstrap interval of the change, of the runs resampled,
+    /// then their samples.
     pub interval: (f64, f64),
     /// What it tells.
     pub verdict: Verdict,
@@ -169,7 +178,7 @@ pub enum Verdict {
     Lower,
     /// The interval holds no change.
     WithinNoise,
-    /// Too few samples to tell the noise, less than two of either.
+    /// Too few runs to tell the noise, less than two of either.
     TooFew,
 }
 
@@ -260,6 +269,7 @@ pub fn report(input: &Input<'_>) -> Report {
         budgets: input.budgets.to_vec(),
         judgements,
         unmeasured,
+        runs_log: last.into_iter().cloned().collect(),
     }
 }
 
@@ -390,7 +400,17 @@ fn row(terminal: &str, records: &[&Record]) -> Option<Row> {
         .iter()
         .flat_map(|record| record.samples.iter().copied())
         .collect();
-    let summary = stats::summary(&samples)?;
+    let mut summary = stats::summary(&samples)?;
+    let clusters: Vec<Vec<f64>> = own
+        .iter()
+        .map(|record| record.samples.clone())
+        .filter(|samples| samples.iter().any(|sample| sample.is_finite()))
+        .collect();
+    if clusters.len() >= LEAST_RUNS
+        && let Some(interval) = stats::clustered_interval(&clusters, Stat::Median)
+    {
+        summary.median_interval = interval;
+    }
     let mut by_cycle: BTreeMap<u32, Vec<f64>> = BTreeMap::new();
     for record in &own {
         if let Some(cycle) = record.cycle {
@@ -417,7 +437,9 @@ fn row(terminal: &str, records: &[&Record]) -> Option<Row> {
         terminal: terminal.to_owned(),
         summary,
         cycles,
+        runs: clusters.len(),
         samples,
+        clusters,
     })
 }
 
@@ -477,8 +499,9 @@ fn mark_skipped(groups: &mut [Group], last: &[&Entry]) -> Vec<Unmeasured> {
     unmeasured
 }
 
-/// The least samples of each side of an A/B that tell its noise.
-const LEAST_SAMPLES: usize = 2;
+/// The least runs of each side of an A/B that tell its noise: a run moves
+/// as a whole of the machine's state, which one run alone cannot tell.
+const LEAST_RUNS: usize = 2;
 
 /// The A/B's change of `group`'s median, if it holds both terminals.
 fn ab_change(group: &Group, ab: &Ab) -> Option<AbChange> {
@@ -486,8 +509,8 @@ fn ab_change(group: &Group, ab: &Ab) -> Option<AbChange> {
     let b = group.rows.iter().find(|row| row.terminal == ab.b)?;
     let (of_a, of_b) = (a.summary.median, b.summary.median);
     let change = of_b - of_a;
-    let interval = stats::change_interval(&a.samples, &b.samples, Stat::Median)?;
-    let verdict = if a.summary.count < LEAST_SAMPLES || b.summary.count < LEAST_SAMPLES {
+    let interval = stats::clustered_change_interval(&a.clusters, &b.clusters, Stat::Median)?;
+    let verdict = if a.runs < LEAST_RUNS || b.runs < LEAST_RUNS {
         Verdict::TooFew
     } else if interval.0 > 0.0 || interval.1 < 0.0 {
         match (group.better, change > 0.0) {
@@ -568,7 +591,11 @@ fn judge(place: usize, budget: &Budget, groups: &[Group], ab: Option<&Ab>) -> Ve
                     Judgement {
                         value: Some(of_b - of_a),
                         percent: (of_a != 0.0).then(|| (of_b - of_a) / of_a.abs() * 100.0),
-                        interval: stats::change_interval(&a.samples, &b.samples, budget.stat),
+                        interval: stats::clustered_change_interval(
+                            &a.clusters,
+                            &b.clusters,
+                            budget.stat,
+                        ),
                         held,
                         note: held.is_none().then(|| {
                             format!("{}'s {} is 0, of no share", ab.a, budget.stat.name())
@@ -642,6 +669,7 @@ mod tests {
             status,
             code: None,
             error: Some(format!("{id} why")),
+            load: None,
         }
     }
 
@@ -836,19 +864,26 @@ mod tests {
         let slow: Vec<f64> = (0..20).map(|at| 250.0 + f64::from(at % 4)).collect();
         let fast: Vec<f64> = slow.iter().map(|value| value - 20.0).collect();
         let noisy: Vec<f64> = (0..20).map(|at| 100.0 + f64::from(at % 7)).collect();
-        let records = [
-            record("startup", "old", "ready_ms", &slow, 1),
-            record("startup", "new", "ready_ms", &fast, 1),
-            record("throughput", "old", "written_mib_s", &slow, 1),
-            record("throughput", "new", "written_mib_s", &fast, 1),
-            record("memory", "old", "footprint_mib", &noisy, 1),
-            record("memory", "new", "footprint_mib", &noisy, 1),
-            record("frames", "old", "frames_per_s", &slow, 1),
-            record("frames", "new", "frames_per_s", &fast, 1),
-            record("motion", "old", "missed_frames", &[3.0], 1),
-            record("motion", "new", "missed_frames", &[9.0], 1),
+        // Each copy of two runs, a record each, but the motion's of one.
+        let twice = |tool: &str, terminal: &str, metric: &str, samples: &[f64]| {
+            [1, 2].map(|cycle| record(tool, terminal, metric, samples, cycle))
+        };
+        let mut records: Vec<Record> = [
+            twice("startup", "old", "ready_ms", &slow),
+            twice("startup", "new", "ready_ms", &fast),
+            twice("throughput", "old", "written_mib_s", &slow),
+            twice("throughput", "new", "written_mib_s", &fast),
+            twice("memory", "old", "footprint_mib", &noisy),
+            twice("memory", "new", "footprint_mib", &noisy),
+            twice("frames", "old", "frames_per_s", &slow),
+            twice("frames", "new", "frames_per_s", &fast),
+        ]
+        .concat();
+        records.extend([
+            record("motion", "old", "missed_frames", &[3.0, 4.0], 1),
+            record("motion", "new", "missed_frames", &[9.0, 9.0], 1),
             record("idle", "old", "cpu_percent", &[0.1, 0.2], 1),
-        ];
+        ]);
         let ab = Ab {
             a: "old".to_owned(),
             b: "new".to_owned(),
@@ -879,6 +914,8 @@ mod tests {
         assert!((change.change + 20.0).abs() < 1e-9);
         assert!((change.percent.unwrap() + 20.0 / change.a * 100.0).abs() < 1e-9);
         assert!(change.interval.1 < 0.0);
+        assert_eq!(report.groups[0].rows[0].runs, 2);
+        assert_eq!(report.groups[4].rows[0].runs, 1);
     }
 
     /// A judgement's budget, terminal, value, whether it held, and its

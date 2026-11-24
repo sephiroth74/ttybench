@@ -31,7 +31,7 @@ use session::{Session, Step};
 use ttybench_core::cli::{self, Args};
 use ttybench_core::config::{self, Terminals, expand_home};
 use ttybench_core::payload::{self, Payload};
-use ttybench_core::results::{self, RECORDS};
+use ttybench_core::results::{self, Load, RECORDS};
 use ttybench_core::{process, terminal, tools};
 
 /// The copy of the session's file in its folder, which `--resume` reads.
@@ -409,6 +409,7 @@ fn skip(step: &Step, feature: &str) -> Entry {
             "{} has no feature `{feature}` in the terminals' file",
             step.terminal
         )),
+        load: None,
     }
 }
 
@@ -428,6 +429,7 @@ fn execute(
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());
     let clock = Instant::now();
+    let load = Load::starting();
     let mut args: Vec<OsString> = step.args.iter().map(OsString::from).collect();
     args.extend([
         "--terminals".into(),
@@ -484,6 +486,7 @@ fn execute(
         status,
         code,
         error,
+        load: Some(Load::ending(load)),
     }
 }
 

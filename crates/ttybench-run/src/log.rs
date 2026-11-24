@@ -84,6 +84,7 @@ mod tests {
             status,
             code: Some(i32::from(status == Status::Failed)),
             error: None,
+            load: None,
         }
     }
 

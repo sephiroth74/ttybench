@@ -188,7 +188,7 @@ impl Verdict {
             Self::Higher => "higher",
             Self::Lower => "lower",
             Self::WithinNoise => "within the noise",
-            Self::TooFew => "too few samples",
+            Self::TooFew => "too few runs",
         }
     }
 }
