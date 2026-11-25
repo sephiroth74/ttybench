@@ -405,24 +405,7 @@ checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "ttybench"
-version = "0.1.0"
-dependencies = [
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-charts"
-version = "0.1.0"
-dependencies = [
- "quick-xml",
- "serde",
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "block2",
  "dispatch2",
@@ -440,111 +423,6 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
-]
-
-[[package]]
-name = "ttybench-frames"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-gpu"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-idle"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-latency"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-memory"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-motion"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-payload"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-report"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde",
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-run"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde",
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-scroll"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-startup"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "ttybench-core",
-]
-
-[[package]]
-name = "ttybench-throughput"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde_json",
- "ttybench-core",
 ]
 
 [[package]]

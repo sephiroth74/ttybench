@@ -34,7 +34,14 @@ Beside them, [`run`](#run-a-session) runs a session of tools and terminals in ba
 
 ## Install
 
-ttybench runs on a Mac of Apple Silicon, of macOS 26 or later. It builds with Rust, of the version that `rust-toolchain.toml` pins, which [rustup](https://rustup.rs) installs by itself:
+ttybench runs on a Mac of Apple Silicon, of macOS 26 or later, and builds with Rust 1.88 or later, which [rustup](https://rustup.rs) installs. Install it from crates.io, which puts `ttybench` and every tool, `ttybench-startup`, `ttybench-latency` and the others, in `~/.cargo/bin`, side by side, where the dispatcher finds them:
+
+```sh
+cargo install ttybench --locked
+ttybench --help
+```
+
+Or build a checkout, of the version that `rust-toolchain.toml` pins:
 
 ```sh
 git clone https://github.com/sephiroth74/ttybench.git
@@ -43,6 +50,8 @@ cargo build --release --locked
 export PATH="$PWD/target/release:$PATH"   # and in your shell's profile
 ttybench --help
 ```
+
+`cargo install ttybench --locked` again takes a newer version.
 
 `frames` and `motion` record Instruments' traces with `xctrace`, which comes with Xcode, not with its Command Line Tools: install Xcode, and point `xcode-select` at it once, `sudo xcode-select --switch /Applications/Xcode.app`.
 

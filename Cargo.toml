@@ -1,41 +1,61 @@
-[workspace]
-resolver = "3"
-members = ["crates/*"]
-
-[workspace.package]
-version = "0.1.0"
+[package]
+name = "ttybench"
+version = "0.2.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.88"
 license = "MIT"
+description = "Benchmarks of terminal emulators on macOS: startup, key latency, throughput, scrolling, rest, memory, energy and GPU, of any terminal that a TOML file describes, with reports and charts."
 repository = "https://github.com/sephiroth74/ttybench"
+homepage = "https://github.com/sephiroth74/ttybench"
+documentation = "https://github.com/sephiroth74/ttybench#readme"
+readme = "README.md"
+keywords = ["terminal", "benchmark", "latency", "macos", "performance"]
+categories = ["development-tools::profiling", "command-line-utilities"]
+include = [
+    "src/**/*.rs",
+    "tests/**/*.rs",
+    "examples/**/*",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+]
 
-[workspace.dependencies]
-ttybench-core = { path = "crates/ttybench-core" }
+[package.metadata.docs.rs]
+default-target = "aarch64-apple-darwin"
+targets = ["aarch64-apple-darwin"]
+
+[lib]
+name = "ttybench"
+path = "src/lib.rs"
+
+[dependencies]
 block2 = "0.6.2"
 dispatch2 = "0.3.1"
 libc = "0.2.190"
 objc2 = "0.6.5"
-objc2-app-kit = { version = "0.3.2", default-features = false }
-objc2-core-foundation = { version = "0.3.2", default-features = false }
-objc2-core-graphics = { version = "0.3.2", default-features = false }
-objc2-core-media = { version = "0.3.2", default-features = false }
-objc2-core-video = { version = "0.3.2", default-features = false }
-objc2-foundation = { version = "0.3.2", default-features = false }
-objc2-screen-capture-kit = { version = "0.3.2", default-features = false }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSRunningApplication"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFArray", "CFCGTypes", "CFDictionary", "CFNumber", "CFString"] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "libc", "CGEvent", "CGEventTypes", "CGDirectDisplay", "CGRemoteOperation", "CGWindow"] }
+objc2-core-media = { version = "0.3.2", default-features = false, features = ["std", "CMBase", "CMSampleBuffer", "CMTime", "objc2-core-video"] }
+objc2-core-video = { version = "0.3.2", default-features = false, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSError", "NSString"] }
+objc2-screen-capture-kit = { version = "0.3.2", default-features = false, features = ["std", "SCStream", "SCShareableContent", "block2", "dispatch2", "objc2-core-foundation", "objc2-core-graphics", "objc2-core-media"] }
 plist = "1.10.3"
 quick-xml = "0.42.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 toml = "1.1.8"
 
-[workspace.lints.rust]
+[lints.rust]
 missing_docs = "warn"
 unsafe_op_in_unsafe_fn = "deny"
 
-[workspace.lints.rustdoc]
+[lints.rustdoc]
 broken_intra_doc_links = "deny"
 
-[workspace.lints.clippy]
+[lints.clippy]
 all = { level = "deny", priority = -1 }
 # Every `unsafe` block needs a `// SAFETY:` comment.
 undocumented_unsafe_blocks = "deny"

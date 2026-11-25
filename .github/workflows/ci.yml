@@ -19,6 +19,18 @@ jobs:
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: Tests
-        run: cargo test --locked --workspace
+        run: cargo test --locked
+      - name: The package, as crates.io would take it
+        run: cargo publish --dry-run --locked
+
+  msrv:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the least Rust that ttybench takes, its rust-version
+        run: rustup toolchain install 1.88 --profile minimal
+      - name: Build of it
+        run: cargo +1.88 check --locked --all-targets

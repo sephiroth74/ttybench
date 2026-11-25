@@ -2,15 +2,19 @@
 
 Every change that you can notice, newest first, of the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-25
 
 ### Added
+
+- ttybench on crates.io: `cargo install ttybench` installs the dispatcher and every tool side by side.
 
 - A style file, `style.toml`, of a session or of `--style`: which charts are drawn and of which metrics, their width, font and colors, each terminal's own color, the report's columns, their titles and the metrics' units, and each metric's statistic of the A/B.
 
 ### Changed
 
 - An A/B compares the wakeups at rest of their means, whose medians are often 0 of both copies.
+- One package, `ttybench`, of a library and every tool's binary, in place of fifteen; the binaries' names and their command lines stay as they were.
+- It builds with Rust 1.88 or later, and refuses at its build another system than macOS.
 
 ## [0.1.0] - 2026-11-24
 
@@ -26,4 +30,5 @@ Every change that you can notice, newest first, of the format of [Keep a Changel
 - `report`: each metric's tables of medians and bootstrap intervals, the A/B of two copies of a terminal, and budgets.
 - `charts`: SVG charts of each metric, the latency's distribution, the frames in time, the GPU and the A/B, a static page of the report and its charts, and the history of a terminal along its versions.
 
+[0.2.0]: https://github.com/sephiroth74/ttybench/releases/tag/v0.2.0
 [0.1.0]: https://github.com/sephiroth74/ttybench/releases/tag/v0.1.0
