@@ -221,7 +221,7 @@ ttybench run session.toml
 - **The session's folder**, `sessions/<date>` by default, keeps a copy of the session's and the terminals' files, `machine.json`, `runs.jsonl` of each run's end, `records.jsonl` of every record, each of its cycle, and a folder of each run of its output.
 - **A run that fails** is told, with its output's last lines, and the session goes on. **A run skipped**, of a feature that its terminal doesn't have, is told apart, and `--resume` doesn't run it again. `ttybench run --resume <folder>` takes up a session that was cut off, or runs its failed runs again; what ended well stays as it is.
 - **`feature`** on a run measures the terminals that have that feature, of it on, and skips the others, without launching them: `--dry-run` tells them, and the session's log keeps them as skipped. A run of no `feature` measures each terminal's base.
-- **`season`** launches each terminal that many times before the first run, not counted, as a terminal just built or installed starts slower for its first launches.
+- **`season`** launches each terminal that many times before the first run, not counted, as a terminal just built or installed starts slower for its first launches; and the floor of a `startup --floor` as many times, as each of its terminals launches.
 - **`sudo = true`** on a run that needs `sudo`: the session asks for it once and keeps it.
 - **The report and the charts**: at its end, the session writes its report and its charts into its folder, as the next sections tell, unless `--no-report`.
 

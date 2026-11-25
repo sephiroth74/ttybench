@@ -7,7 +7,7 @@ Every change that you can notice, newest first, of the format of [Keep a Changel
 ### Added
 
 - ttybench on crates.io: `cargo install ttybench` installs the dispatcher and every tool side by side.
-- `startup --floor`: the least app that shows a window, `ttybench-floor`, launched beside each round as the terminal launches, and the terminal's window less the floor's of the same round, `window_gap_ms`, out of which what slows both alike drops, as the Mac's state from a day to the next.
+- `startup --floor`: the least app that shows a window, `ttybench-floor`, launched beside each round as the terminal launches, and the terminal's window less the floor's of the same round, `window_gap_ms`, out of which what slows both alike drops, as the Mac's state from a day to the next; a session's `season` seasons the floor too.
 - A style file, `style.toml`, of a session or of `--style`: which charts are drawn and of which metrics, their width, font and colors, each terminal's own color, the report's columns, their titles and the metrics' units, and each metric's statistic of the A/B.
 
 ### Changed

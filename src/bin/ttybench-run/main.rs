@@ -33,7 +33,7 @@ use ttybench::config::{self, Terminals, expand_home};
 use ttybench::payload::{self, Payload};
 use ttybench::results::{self, Load, RECORDS};
 use ttybench::style::{self, Style};
-use ttybench::{process, terminal, tools};
+use ttybench::{floor, process, terminal, tools};
 
 /// The copy of the session's file in its folder, which `--resume` reads.
 const SESSION: &str = "session.toml";
@@ -307,6 +307,7 @@ fn run() -> Result<bool, String> {
             .iter()
             .filter(|name| names.contains(name.as_str()));
         season(order, &opened.terminals, session.season)?;
+        season_floors(&pending, &opened.terminals, session.season)?;
     }
     let terminals_file = folder.join(TERMINALS);
     let pause = Duration::from_secs_f64(session.pause);
@@ -672,6 +673,56 @@ fn season<'a>(
                     eprintln!("ttybench-run: {name} did not start to season: {why}");
                     break;
                 }
+            }
+            thread::sleep(SEASON_PAUSE);
+        }
+    }
+    Ok(())
+}
+
+/// Launches the floor of each step of `startup --floor` in `pending`
+/// `times` times, as its terminal launches, each way once, at rest, not
+/// counted: a floor's bundle just made starts slower for its first
+/// launches, as a terminal does.
+fn season_floors(pending: &[&Step], terminals: &Terminals, times: u32) -> Result<(), String> {
+    let mut floors: Vec<config::Terminal> = Vec::new();
+    for step in pending
+        .iter()
+        .filter(|step| step.tool == "startup" && step.args.iter().any(|arg| arg == "--floor"))
+    {
+        let named = step
+            .args
+            .iter()
+            .position(|arg| arg == "--floor-bundle")
+            .and_then(|at| step.args.get(at + 1));
+        let bundle = match named {
+            Some(bundle) => PathBuf::from(bundle),
+            None => floor::cached_bundle(&floor::binary()?)
+                .map_err(|error| format!("the floor's bundle: {error}"))?,
+        };
+        let floor = floor::terminal_of(&terminals.terminals[&step.terminal], &bundle);
+        if !floors.contains(&floor) {
+            floors.push(floor);
+        }
+    }
+    let binary = payload::binary()?;
+    let home = std::env::home_dir().unwrap_or_else(std::env::temp_dir);
+    for floor in &floors {
+        for at in 1..=times {
+            eprintln!("ttybench-run: seasoning the floor, {at}/{times}");
+            let payload = Payload::new(&binary, &["rest"])
+                .map_err(|error| format!("the payload: {error}"))?;
+            let launched = terminal::launch("floor", floor, payload.command(), &home, &[])
+                .map_err(|error| format!("the floor does not launch: {error}"))?;
+            let shown = launched.wait_window(SEASON_TIMEOUT).is_some();
+            if let Err(error) = launched.quit(Duration::from_secs(5)) {
+                eprintln!("ttybench-run: the floor does not quit: {error}");
+            }
+            if !shown {
+                return Err(format!(
+                    "the floor showed no window within {} s",
+                    SEASON_TIMEOUT.as_secs()
+                ));
             }
             thread::sleep(SEASON_PAUSE);
         }
