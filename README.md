@@ -20,7 +20,7 @@ This is version 0.1.0.
 
 | Tool | What | Its metrics | It takes |
 |---|---|---|---|
-| [`startup`](#startup) | From the launch to the window, and to the shell running a command | `window_ms`, `ready_ms` | |
+| [`startup`](#startup) | From the launch to the window, and to the shell running a command; beside the least app that shows a window, of `--floor` | `window_ms`, `ready_ms`, `floor_window_ms`, `window_gap_ms` | |
 | [`idle`](#idle) | The CPU, the wakeups and the power of a terminal at rest | `cpu_percent`, `package_idle_wakeups_per_s`, `interrupt_wakeups_per_s`, `power_mw` | |
 | [`memory`](#memory) | The memory of its processes | `footprint_mib`, `peak_mib` | |
 | [`throughput`](#throughput) | How fast it prints a file | `written_mib_s`, `quiet_mib_s` | |
@@ -30,7 +30,7 @@ This is version 0.1.0.
 | [`frames`](#frames) | Each frame on the GPU and on the display | `frame_gpu_ms`, `frames_per_s`, `frame_gap_ms`, `refreshes_with_frame`, `frames_shown_per_s`, `frames_dropped` | Xcode, Accessibility to scroll |
 | [`motion`](#motion) | Its window dragged or resized: frames, misses, the compositor's delay | `frames_per_s`, `missed_frames`, `compositor_delay_ms`, `terminal_cpu_percent`, `window_server_cpu_percent` | Xcode, Accessibility |
 
-Beside them, [`run`](#run-a-session) runs a session of tools and terminals in balanced orders, [`report`](#read-a-sessions-report) sums it up in tables, its A/B and its budgets, and [`charts`](#see-a-sessions-charts) draws it, with a page of both. `ttybench-payload` is what runs inside the terminal: it reports that it runs, prints, reads keys and rests, and you never run it yourself.
+Beside them, [`run`](#run-a-session) runs a session of tools and terminals in balanced orders, [`report`](#read-a-sessions-report) sums it up in tables, its A/B and its budgets, and [`charts`](#see-a-sessions-charts) draws it, with a page of both. `ttybench-payload` is what runs inside the terminal: it reports that it runs, prints, reads keys and rests, and you never run it yourself; nor `ttybench-floor`, the least app that shows a window, which `startup --floor` launches beside the terminal.
 
 ## Install
 
@@ -125,6 +125,7 @@ A figure tells a terminal apart only where everything else stays alike. ttybench
 - **Balanced orders**: a session turns each run's terminals at each cycle, so that each runs first as often as last; give it cycles of a multiple of the terminals' number.
 - **The same pause** before each run, so that each starts of the same rest.
 - **Seasoned copies**: a terminal just built, installed or moved starts slower for its first launches, while macOS checks and caches it; `season` launches each terminal that many times before the first run. Build two copies of one terminal alike: a copy that is not notarized starts slower than one that is.
+- **A startup beside its floor**: the same terminal starts tens of milliseconds slower or faster from a day to the next, of the Mac's state alone. `startup --floor` launches the least app that shows a window beside each round, alike, and records the terminal's window less the floor's of the same round, `window_gap_ms`, out of which what slows both alike drops.
 - **The Mac left alone**: no other app moving on screen, the pointer and the keyboard untouched, the Mac on its power adapter. A background scan of new files, as an antivirus's of a trace just written, takes the machine for minutes.
 - **The same display** for every terminal of a measure, at its rate: each record keeps the display's refresh rate.
 
@@ -353,6 +354,12 @@ ttybench startup --terminal ghostty --rounds 10 --pause 2
 
 Each round launches the terminal running `ttybench-payload`, waits for its window and for the payload to report that it runs, then quits the terminal. `--season <n>` runs that many rounds first without counting them, as a binary just built starts slower for its first launches. The records go to `--session <folder>`, `ttybench-session` by default.
 
+`--floor` measures each round's floor too: `ttybench-floor`, an app of AppKit that shows one window and does nothing else, launched as the terminal launches, by `open` of its bundle or by its executable, and measured to its window alike, before the terminal in one round and after it in the next. Its time is `floor_window_ms`, and the terminal's window less the floor's of the same round is `window_gap_ms`: what the terminal itself takes beyond the least that macOS takes to launch an app and show its window. The floor's bundle is made in `~/Library/Caches/ttybench` of the `ttybench-floor` beside the tool, anew as it changes; `--floor-bundle <app>` names another.
+
+```sh
+ttybench startup --terminal ghostty --rounds 10 --floor
+```
+
 ### idle
 
 What a terminal uses at rest: the share of a CPU that its processes take, how often they wake up a CPU package or take an interrupt, and the power that macOS bills them. A terminal at rest should take almost none.
@@ -533,7 +540,7 @@ The frames missed vary from a run to the next, from none to ten, for both.
 - **macOS on Apple Silicon alone**: the window server, ScreenCaptureKit, IOKit's GPU clients and Instruments are macOS's; the processes' GPU time is the Apple GPU's.
 - **To the window server, not to the light**: `latency` ends at the frame that the window server took from the terminal, and `scroll` counts the frames that it took. The display's scan-out and its panel's response come after, alike for every terminal on that display; a camera would see them, ttybench doesn't.
 - **A frame's time is the window server's**: each capture's frame tells when the window server took it, within a refresh of the key's echo, not when the display showed it. `frames` reads which frames the display showed from its own record, in Instruments' trace.
-- **A startup through `open`** counts Launch Services' work and the app's opening of a script, more than a terminal launched by its own program does: compare startups among terminals launched alike.
+- **A startup through `open`** counts Launch Services' work and the app's opening of a script, more than a terminal launched by its own program does: compare startups among terminals launched alike. The floor of `--floor` launches as its terminal does, so that its gap leaves that work out.
 - **One window**: the tools measure a terminal's first window, and a pane beside it for `latency --flood`; tabs, splits and other windows aren't measured.
 - **A virtual machine's GPU** tells no process's GPU time: `gpu` stops there, of its reason, and `frames` reads what Instruments' trace holds of it.
 - **The system's GPU** is the whole GPU's: `powermetrics` tells its power and its share of the time at work, not each process's. A terminal's own share is its GPU time.

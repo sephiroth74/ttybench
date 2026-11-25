@@ -14,6 +14,7 @@ pub mod capture;
 pub mod cli;
 pub mod clock;
 pub mod config;
+pub mod floor;
 pub mod frames;
 pub mod gpu;
 pub mod keys;

@@ -29,6 +29,18 @@ const KNOWN: &[(&str, &str, &str, Option<Better>)] = &[
         "From the launch to running the payload",
         Some(Better::Lower),
     ),
+    (
+        "startup",
+        "floor_window_ms",
+        "From the launch to the floor app's window",
+        Some(Better::Lower),
+    ),
+    (
+        "startup",
+        "window_gap_ms",
+        "Its window after the floor app's",
+        Some(Better::Lower),
+    ),
     ("idle", "cpu_percent", "Its CPU", Some(Better::Lower)),
     (
         "idle",

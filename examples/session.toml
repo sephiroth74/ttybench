@@ -14,6 +14,7 @@ season = 0                           # launches of each terminal before the firs
 [[run]]
 tool = "startup"
 rounds = 10
+args = ["--floor"]                   # the least app that shows a window, beside each round: window_gap_ms
 
 [[run]]
 tool = "idle"
