@@ -2,6 +2,16 @@
 
 Every change that you can notice, newest first, of the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+
+- A style file, `style.toml`, of a session or of `--style`: which charts are drawn and of which metrics, their width, font and colors, each terminal's own color, the report's columns, their titles and the metrics' units, and each metric's statistic of the A/B.
+
+### Changed
+
+- An A/B compares the wakeups at rest of their means, whose medians are often 0 of both copies.
+
 ## [0.1.0] - 2026-11-24
 
 ### Added

@@ -8,10 +8,12 @@
 //!
 //! ```text
 //! ttybench report <folder> [--a <terminal> --b <terminal>]
-//!                 [--out <file>|-] [--json <file>]
+//!                 [--out <file>|-] [--json <file>] [--style <file>]
 //! ```
 //!
 //! `--a` and `--b` compare two terminals in place of the session's `ab`.
+//! `--style` takes a style in place of the session's, its tables'
+//! columns, titles and units and each metric's statistic of the A/B.
 //! `--out -` writes the Markdown to the standard output, and the JSON only
 //! of `--json`.
 
@@ -26,6 +28,7 @@ use ttybench_core::budget::{self, Ab, Judged};
 use ttybench_core::cli::Args;
 use ttybench_core::config;
 use ttybench_core::results::{self, MACHINE, Machine, RECORDS};
+use ttybench_core::style::Style;
 
 /// The session's file, in its folder, as the coordinator copies it.
 const SESSION: &str = "session.toml";
@@ -37,8 +40,7 @@ const MARKDOWN: &str = "report.md";
 const JSON: &str = "report.json";
 
 /// How the report runs.
-const USAGE: &str =
-    "ttybench report <folder> [--a <terminal> --b <terminal>] [--out <file>|-] [--json <file>]";
+const USAGE: &str = "ttybench report <folder> [--a <terminal> --b <terminal>] [--out <file>|-] [--json <file>] [--style <file>]";
 
 fn main() -> ExitCode {
     match run() {
@@ -60,7 +62,11 @@ fn run() -> Result<(), String> {
         return Err(format!("which session's folder?\n{USAGE}"));
     }
     let folder = PathBuf::from(config::expand_home(&args.remove(0)));
-    let options = Args::parse(args, &["a", "b", "out", "json"], &[])?;
+    let options = Args::parse(args, &["a", "b", "out", "json", "style"], &[])?;
+    let given = options
+        .value("style")
+        .map(|path| PathBuf::from(config::expand_home(path)));
+    let style = Style::of_session(&folder, given.as_deref())?;
     let records = results::read_records(&folder.join(RECORDS)).map_err(|error| {
         format!(
             "{} holds no session's records: {error}",
@@ -106,8 +112,9 @@ fn run() -> Result<(), String> {
         terminals: &judged.terminals,
         ab: judged.ab.clone(),
         budgets: &judged.budgets,
+        style: &style,
     });
-    let text = markdown::render(&report);
+    let text = markdown::render(&report, &style);
     let json = serde_json::to_string_pretty(&report).map_err(|error| error.to_string())? + "\n";
     let out = options.value("out");
     if out == Some("-") {

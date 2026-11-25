@@ -6,11 +6,13 @@ use std::fmt::Write;
 
 use serde_json::Value;
 use ttybench_core::results::Status;
+use ttybench_core::stats::Stat;
+use ttybench_core::style::Style;
 
 use crate::analysis::{AbChange, Group, Report, Verdict};
 
-/// The report's Markdown.
-pub fn render(report: &Report) -> String {
+/// The report's Markdown, of `style`'s tables' columns and titles.
+pub fn render(report: &Report, style: &Style) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "# ttybench session {}\n", cell(&report.session));
     let _ = writeln!(out, "{}\n", about(report));
@@ -41,7 +43,7 @@ pub fn render(report: &Report) -> String {
     for tool in tools {
         let _ = writeln!(out, "## {}\n", cell(tool));
         for group in report.groups.iter().filter(|group| group.tool == tool) {
-            table(&mut out, group);
+            table(&mut out, group, style);
         }
     }
     if !report.runs_log.is_empty() {
@@ -228,7 +230,7 @@ fn ab(out: &mut String, report: &Report) {
     let _ = writeln!(out, "## A/B: {} against {}\n", cell(&ab.b), cell(&ab.a));
     let _ = writeln!(
         out,
-        "Each metric's median of A, {}, and of B, {}; the change, B's less A's, and its 95 % bootstrap interval, of the runs resampled, then their samples, as a run moves as a whole of the machine's state: a change whose interval holds 0 is within the noise, and a copy of fewer than two runs tells too few.\n",
+        "Each metric's median of A, {}, and of B, {}, or the statistic that the metric names, as the style chooses; the change, B's less A's, and its 95 % bootstrap interval, of the runs resampled, then their samples, as a run moves as a whole of the machine's state: a change whose interval holds 0 is within the noise, and a copy of fewer than two runs tells too few.\n",
         cell(&ab.a),
         cell(&ab.b)
     );
@@ -241,6 +243,7 @@ fn ab(out: &mut String, report: &Report) {
         any = true;
         let digits = Digits::of(group);
         let AbChange {
+            stat,
             a,
             b,
             change: by,
@@ -258,11 +261,16 @@ fn ab(out: &mut String, report: &Report) {
         };
         let _ = writeln!(
             out,
-            "| {} · {} ({}){} | {} | {} | {} | {} … {} | {verdict} |",
+            "| {} · {} ({}){}{} | {} | {} | {} | {} … {} | {verdict} |",
             cell(&group.tool),
             cell(&group.title),
             cell(&group.unit),
             of_conditions(group, true),
+            if stat == Stat::Median {
+                String::new()
+            } else {
+                format!(", its {}", stat.name())
+            },
             digits.format(a),
             digits.format(b),
             change_text(by, percent, digits, ""),
@@ -277,7 +285,7 @@ fn ab(out: &mut String, report: &Report) {
 }
 
 /// A group's heading, its conditions and its table.
-fn table(out: &mut String, group: &Group) {
+fn table(out: &mut String, group: &Group, style: &Style) {
     let _ = write!(
         out,
         "### {} ({}){}",
@@ -306,52 +314,83 @@ fn table(out: &mut String, group: &Group) {
     }
     let _ = writeln!(out, "{line}\n");
     let cycles = group.rows.iter().any(|row| !row.cycles.is_empty());
-    out.push_str("| Terminal | Median | 95 % interval of the median | p95 | Mean ± sd | Min … max | Samples (runs) |");
-    out.push_str(if cycles {
-        " Each cycle's median |\n"
-    } else {
-        "\n"
-    });
-    out.push_str("|---|---|---|---|---|---|---|");
-    out.push_str(if cycles { "---|\n" } else { "\n" });
+    // The style's columns, each cycle's medians of a group that has more
+    // than one.
+    let columns: Vec<&str> = style
+        .columns()
+        .into_iter()
+        .filter(|column| *column != "cycles" || cycles)
+        .collect();
+    out.push_str("| Terminal |");
+    for column in &columns {
+        let _ = write!(
+            out,
+            " {} |",
+            cell(style.title(column, built_in_title(column)))
+        );
+    }
+    out.push_str("\n|---|");
+    out.push_str(&"---|".repeat(columns.len()));
+    out.push('\n');
     let digits = Digits::of(group);
     for row in &group.rows {
         let summary = &row.summary;
-        let _ = write!(
-            out,
-            "| {} | {} | {} … {} | {} | {} ± {} | {} … {} | {} ({}) |",
-            cell(&row.terminal),
-            digits.format(summary.median),
-            digits.format(summary.median_interval.0),
-            digits.format(summary.median_interval.1),
-            digits.format(summary.p95),
-            digits.format(summary.mean),
-            digits.format(summary.stddev),
-            digits.format(summary.min),
-            digits.format(summary.max),
-            summary.count,
-            row.runs,
-        );
-        if cycles {
-            let medians: Vec<String> = row
-                .cycles
-                .iter()
-                .map(|cycle| digits.format(cycle.median))
-                .collect();
-            let _ = write!(out, " {} |", medians.join(", "));
+        let _ = write!(out, "| {} |", cell(&row.terminal));
+        for column in &columns {
+            let text = match *column {
+                "median" => digits.format(summary.median),
+                "interval" => format!(
+                    "{} … {}",
+                    digits.format(summary.median_interval.0),
+                    digits.format(summary.median_interval.1)
+                ),
+                "p95" => digits.format(summary.p95),
+                "mean" => format!(
+                    "{} ± {}",
+                    digits.format(summary.mean),
+                    digits.format(summary.stddev)
+                ),
+                "range" => format!(
+                    "{} … {}",
+                    digits.format(summary.min),
+                    digits.format(summary.max)
+                ),
+                "samples" => format!("{} ({})", summary.count, row.runs),
+                _ => row
+                    .cycles
+                    .iter()
+                    .map(|cycle| digits.format(cycle.median))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            };
+            let _ = write!(out, " {text} |");
         }
         out.push('\n');
     }
     for skip in &group.skipped {
         let _ = write!(
             out,
-            "| {} | skipped: {} | | | | | |",
+            "| {} | skipped: {} |",
             cell(&skip.terminal),
             cell(&skip.why)
         );
-        out.push_str(if cycles { " |\n" } else { "\n" });
+        out.push_str(&" |".repeat(columns.len().saturating_sub(1)));
+        out.push('\n');
     }
     out.push('\n');
+}
+
+/// The built-in title of the metric table's column `column`.
+fn built_in_title(column: &str) -> &'static str {
+    match column {
+        "median" => "Median",
+        "interval" => "95 % interval of the median",
+        "p95" => "p95",
+        "mean" => "Mean ± sd",
+        "range" => "Min … max",
+        "samples" => "Samples (runs)",
+        _ => "Each cycle's median",
+    }
 }
 
 /// A group's feature and telling conditions after its title, as `, text
@@ -510,6 +549,61 @@ mod tests {
     }
 
     #[test]
+    fn a_style_s_columns_titles_units_and_statistics_make_the_report() {
+        let mut second = record("idle", "old", "interrupt_wakeups_per_s", "/s", &[0.0, 2.0]);
+        second.cycle = Some(2);
+        let records = [
+            record("idle", "old", "interrupt_wakeups_per_s", "/s", &[0.0, 0.0]),
+            second,
+            record("idle", "new", "interrupt_wakeups_per_s", "/s", &[0.0, 0.0]),
+            record("idle", "new", "interrupt_wakeups_per_s", "/s", &[0.0, 0.0]),
+            record("memory", "old", "footprint_mib", "MiB", &[45.0, 46.0]),
+            record("memory", "new", "footprint_mib", "MiB", &[44.0, 45.0]),
+        ];
+        let style: Style = ttybench_core::config::parse(
+            std::path::Path::new("style.toml"),
+            r#"
+            [report]
+            columns = ["median", "samples"]
+            titles = { median = "Middle", samples = "Count" }
+            units = { "memory.footprint_mib" = "mebibytes" }
+            "#,
+        )
+        .unwrap();
+        style.check().unwrap();
+        let terminals = ["old".to_owned(), "new".to_owned()];
+        let report = analysis::report(&Input {
+            session: "s".to_owned(),
+            machine: None,
+            records: &records,
+            log: &[],
+            terminals: &terminals,
+            ab: Some(Ab {
+                a: "old".to_owned(),
+                b: "new".to_owned(),
+            }),
+            budgets: &[],
+            style: &style,
+        });
+        let text = render(&report, &style);
+        // The columns chosen, renamed, and the unit of the style.
+        assert!(
+            text.contains("| Terminal | Middle | Count |\n|---|---|---|\n"),
+            "{text}"
+        );
+        assert!(!text.contains("Mean ± sd"), "{text}");
+        assert!(
+            text.contains("### Its memory's footprint (mebibytes)"),
+            "{text}"
+        );
+        // The wakeups of their means, which both medians of 0 tell nothing of.
+        assert!(
+            text.contains("| idle · Interrupt wakeups a second (/s), its mean | 0.5 | 0 |"),
+            "{text}"
+        );
+    }
+
+    #[test]
     fn a_report_of_its_budgets_ab_tables_and_runs() {
         let mut throughput = record(
             "throughput",
@@ -569,8 +663,9 @@ mod tests {
                 b: "new".to_owned(),
             }),
             budgets: &budgets,
+            style: &Style::default(),
         });
-        let text = render(&report);
+        let text = render(&report, &Style::default());
         for part in [
             "# ttybench session 2026-11-24-1200\n",
             "on Mac16,8 (Apple M4 Pro), macOS 27.2, the main display at 60 Hz. 1 run: 0 done, 0 failed, 1 skipped.",

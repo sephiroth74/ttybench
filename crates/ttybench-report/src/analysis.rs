@@ -9,6 +9,7 @@ use serde_json::{Map, Value};
 use ttybench_core::budget::{Ab, Budget};
 use ttybench_core::results::{self, Entry, Machine, Record, Status};
 use ttybench_core::stats::{self, Stat, Summary};
+use ttybench_core::style::Style;
 
 use crate::metrics::{self, Better};
 
@@ -28,6 +29,9 @@ pub struct Input<'a> {
     pub ab: Option<Ab>,
     /// Its budgets.
     pub budgets: &'a [Budget],
+    /// Its style: the metrics' units and each metric's statistic of the
+    /// A/B.
+    pub style: &'a Style,
 }
 
 /// A session's report.
@@ -146,12 +150,15 @@ pub struct Skip {
     pub why: String,
 }
 
-/// The change of a metric's median from the A/B's A to its B.
+/// The change of a metric's statistic, its median unless the style says,
+/// from the A/B's A to its B.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct AbChange {
-    /// A's median.
+    /// The statistic compared.
+    pub stat: Stat,
+    /// A's statistic.
     pub a: f64,
-    /// B's median.
+    /// B's statistic.
     pub b: f64,
     /// B's less A's.
     pub change: f64,
@@ -230,11 +237,19 @@ pub struct Unmeasured {
 pub fn report(input: &Input<'_>) -> Report {
     let order = terminal_order(input.terminals, input.records);
     let mut groups = groups(input.records, &order);
+    for group in &mut groups {
+        let unit = input
+            .style
+            .unit(&group.tool, &group.metric, &group.unit)
+            .to_owned();
+        group.unit = unit;
+    }
     let last = results::last_of_each(input.log);
     let unmeasured = mark_skipped(&mut groups, &last);
     if let Some(ab) = &input.ab {
         for group in &mut groups {
-            group.change = ab_change(group, ab);
+            let stat = input.style.ab_stat(&group.tool, &group.metric);
+            group.change = ab_change(group, ab, stat);
         }
     }
     let judgements = input
@@ -503,13 +518,14 @@ fn mark_skipped(groups: &mut [Group], last: &[&Entry]) -> Vec<Unmeasured> {
 /// as a whole of the machine's state, which one run alone cannot tell.
 const LEAST_RUNS: usize = 2;
 
-/// The A/B's change of `group`'s median, if it holds both terminals.
-fn ab_change(group: &Group, ab: &Ab) -> Option<AbChange> {
+/// The A/B's change of `group`'s statistic `stat`, if it holds both
+/// terminals.
+fn ab_change(group: &Group, ab: &Ab, stat: Stat) -> Option<AbChange> {
     let a = group.rows.iter().find(|row| row.terminal == ab.a)?;
     let b = group.rows.iter().find(|row| row.terminal == ab.b)?;
-    let (of_a, of_b) = (a.summary.median, b.summary.median);
+    let (of_a, of_b) = (stat.of(&a.summary), stat.of(&b.summary));
     let change = of_b - of_a;
-    let interval = stats::clustered_change_interval(&a.clusters, &b.clusters, Stat::Median)?;
+    let interval = stats::clustered_change_interval(&a.clusters, &b.clusters, stat)?;
     let verdict = if a.runs < LEAST_RUNS || b.runs < LEAST_RUNS {
         Verdict::TooFew
     } else if interval.0 > 0.0 || interval.1 < 0.0 {
@@ -523,6 +539,7 @@ fn ab_change(group: &Group, ab: &Ab) -> Option<AbChange> {
         Verdict::WithinNoise
     };
     Some(AbChange {
+        stat,
         a: of_a,
         b: of_b,
         change,
@@ -697,8 +714,12 @@ mod tests {
             terminals,
             ab,
             budgets,
+            style: &STYLE,
         }
     }
+
+    /// The built-in style, of the tests.
+    static STYLE: std::sync::LazyLock<Style> = std::sync::LazyLock::new(Style::default);
 
     #[test]
     fn records_of_the_same_conditions_alone_go_together() {

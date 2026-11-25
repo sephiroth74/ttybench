@@ -238,7 +238,7 @@ terminals = ["lokyr-1.4", "lokyr-1.5"]
 ab = { a = "lokyr-1.4", b = "lokyr-1.5" }   # A before, B after
 ```
 
-The report's A/B table gives each metric's median of A and of B, the change, B's less A's, in the unit and in percent, and its 95 % bootstrap interval, of each copy's runs resampled, then their samples: a change whose interval holds 0 is within the noise; one beyond it is better or worse, where the metric has a better way, or higher or lower; a copy of fewer than two runs tells too few. Give an A/B several cycles: each copy's runs, interleaved with the other's, meet the machine's states alike. `ttybench report <folder> --a <name> --b <name>` compares two others.
+The report's A/B table gives each metric's median of A and of B, or its mean for the wakeups, whose medians are often 0 of both, or the statistic that [a style](#style-the-report-and-the-charts) chooses, the change, B's less A's, in the unit and in percent, and its 95 % bootstrap interval, of each copy's runs resampled, then their samples: a change whose interval holds 0 is within the noise; one beyond it is better or worse, where the metric has a better way, or higher or lower; a copy of fewer than two runs tells too few. Give an A/B several cycles: each copy's runs, interleaved with the other's, meet the machine's states alike. `ttybench report <folder> --a <name> --b <name>` compares two others.
 
 Measure both copies in one session: two sessions' figures differ of the machine's state more than many changes do.
 
@@ -298,6 +298,39 @@ ttybench charts --history sessions/1.4.0 sessions/1.5.0 --out history
 A version and its build both show, as `1.4.0 (202611220721)`, so that two builds of one version tell apart. A metric joins its own across sessions of the same conditions, whatever their rounds, pauses and seasoning; a session of other conditions, as another window size, starts a panel of its own. `history/index.html` shows them all.
 
 Sessions measure alike within a few percent alone: the machine's load, its display and its temperature move a session's figures. The history tells a trend; an A/B in one session tells a change.
+
+## Style the report and the charts
+
+A style file, `style.toml`, changes how a session's report and charts look, and which statistic its A/B compares; every key is optional, and the built-in style is the defaults. Name it in the session's file, of the file's folder, and the coordinator checks it as it starts and copies it into the session's folder, where `ttybench report` and `ttybench charts` find it; or give it to either as `--style <file>`:
+
+```toml
+style = "style.toml"         # in session.toml
+```
+
+```toml
+[charts]
+kinds = ["bars", "ab"]       # bars, distribution, intervals, gpu, ab; all of them by default
+metrics = ["throughput.quiet_mib_s", "latency.latency_ms"]   # tool.metric; all of them by default
+width = 900                  # points, from 320 to 2000; 680 by default
+font = "Iosevka, monospace"  # as CSS writes a font's family
+light = { surface = "#ffffff", grid = "#e5e5e5" }   # the paints of each appearance
+dark = { surface = "#000000" }
+terminals.ghostty = { light = "#7c3aed", dark = "#a78bfa" }   # a terminal's own color
+
+[report]
+columns = ["median", "interval", "samples"]   # median, interval, p95, mean, range, samples, cycles
+titles = { median = "Middle" }                # a column renamed
+units = { "memory.footprint_mib" = "MB" }     # a metric's unit as the tables write it
+
+[ab]
+"idle.cpu_percent" = "mean"  # median, mean, p95, p99, min or max; the median by default
+```
+
+- **The charts' paints**, by their names: `surface`, `primary`, `secondary`, `muted`, `grid`, `base`, `budget`, `context`, `context-line`, `ring`, `halo`, `better`, `better-line`, `worse`, `worse-line`, `plain` and `plain-line`, each a color of `#rrggbb`. A terminal's own color takes the place of the series' color of its place, in a session's charts; the history's keep the series'.
+- **The A/B's statistic** of a metric: the median by default, but the mean of `idle`'s wakeups, as events so rare that both medians are 0 tell nothing of their rates. Budgets keep their own `stat`.
+- **`metrics` and `kinds`** leave the other charts out; the A/B's chart shows every metric, of its kind.
+
+A wrong key, a color not of `#rrggbb`, a kind or a column that is no name of theirs, stop the tool that reads the style, of the key that is wrong. [`examples/style.toml`](examples/style.toml) holds every key.
 
 ## The tools
 

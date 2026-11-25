@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 
 use crate::kinds::Drawn;
 use crate::model::{Group, Report};
-use crate::svg::{self, Chart, Digits, WIDTH, escape, series, tick_text, ticks};
+use crate::svg::{self, Chart, Digits, escape, series, tick_text, ticks};
 
 /// The conditions that tell how a session ran, not what it measured,
 /// which may differ between two sessions of the same measure.
@@ -177,7 +177,7 @@ fn chart(
     );
     let class = series(place);
     let top = chart.top() + 8.0;
-    let width = (WIDTH - 32.0 - GAP) / 2.0;
+    let width = (svg::width() - 32.0 - GAP) / 2.0;
     for (index, line) in panels.iter().enumerate() {
         let x0 = 16.0 + (index % 2) as f64 * (width + GAP);
         let y0 = top + (index / 2) as f64 * PANEL_HEIGHT;

@@ -2,10 +2,82 @@
 //! appearance, a chart's frame of its title, subtitle and description for
 //! screen readers, the axes' round ticks, and numbers and texts.
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
+use ttybench_core::style::Style;
+
+/// A chart's width, in points, of the built-in style.
+const WIDTH: f64 = 680.0;
+
+/// The charts' font, of the built-in style.
+const FONT: &str = "system-ui, -apple-system, \"Segoe UI\", sans-serif";
+
+/// What the charts drawn on this thread look like, of a style: the
+/// built-in one's of none.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Look {
+    width: Option<f64>,
+    font: Option<String>,
+    /// The paints' colors in place of the built-in ones, of each
+    /// appearance, by their names.
+    light: BTreeMap<String, String>,
+    dark: BTreeMap<String, String>,
+    /// The series' colors in place of the built-in ones, by their places,
+    /// light and dark, of the terminals that the style colors.
+    series: BTreeMap<usize, (String, String)>,
+}
+
+thread_local! {
+    /// The look of the charts that this thread draws.
+    static LOOK: RefCell<Look> = RefCell::new(Look::default());
+}
+
+/// The look of `style` for a session of `terminals`, in their places,
+/// whose series' colors the style's terminals' colors take; why not, of a
+/// paint of no name of the charts'.
+pub fn look_of(style: &Style, terminals: &[String]) -> Result<Look, String> {
+    let charts = &style.charts;
+    for (appearance, colors) in [("light", &charts.light), ("dark", &charts.dark)] {
+        for name in colors.keys() {
+            if !PAINTS.iter().any(|(paint, ..)| paint == name) {
+                let names: Vec<&str> = PAINTS.iter().map(|(paint, ..)| *paint).collect();
+                return Err(format!(
+                    "charts.{appearance}: `{name}` is no paint of the charts, of {}",
+                    names.join(", ")
+                ));
+            }
+        }
+    }
+    let series = terminals
+        .iter()
+        .enumerate()
+        .filter(|(place, _)| *place < SERIES.len())
+        .filter_map(|(place, name)| {
+            let color = charts.terminals.get(name)?;
+            let dark = color.dark.clone().unwrap_or_else(|| color.light.clone());
+            Some((place, (color.light.clone(), dark)))
+        })
+        .collect();
+    Ok(Look {
+        width: charts.width,
+        font: charts.font.clone(),
+        light: charts.light.clone(),
+        dark: charts.dark.clone(),
+        series,
+    })
+}
+
+/// Has the charts that this thread draws next look as `look` says.
+pub fn set_look(look: Look) {
+    LOOK.with_borrow_mut(|kept| *kept = look);
+}
+
 /// A chart's width, in points.
-pub const WIDTH: f64 = 680.0;
+pub fn width() -> f64 {
+    LOOK.with_borrow(|look| look.width.unwrap_or(WIDTH))
+}
 
 /// Where a chart's content starts under a subtitle of one line.
 pub const TOP: f64 = 62.0;
@@ -62,18 +134,35 @@ pub fn series(index: usize) -> String {
 
 /// The rules of each class under `scope`, of the dark appearance or not.
 fn rules(out: &mut String, scope: &str, dark: bool, indent: &str) {
-    for (name, kind, light, darker) in PAINTS {
-        let _ = writeln!(
-            out,
-            "{indent}{scope} .{name} {{ {kind}: {}; }}",
-            if dark { darker } else { light }
-        );
-    }
-    for (index, (light, darker)) in SERIES.iter().enumerate() {
-        let color = if dark { darker } else { light };
-        let _ = writeln!(out, "{indent}{scope} .t{index} {{ fill: {color}; }}");
-        let _ = writeln!(out, "{indent}{scope} .t{index}-line {{ stroke: {color}; }}");
-    }
+    LOOK.with_borrow(|look| {
+        let own = if dark { &look.dark } else { &look.light };
+        for (name, kind, light, darker) in PAINTS {
+            let color = own
+                .get(*name)
+                .map_or(if dark { *darker } else { *light }, String::as_str);
+            let _ = writeln!(out, "{indent}{scope} .{name} {{ {kind}: {color}; }}");
+        }
+        for (index, (light, darker)) in SERIES.iter().enumerate() {
+            let color = match look.series.get(&index) {
+                Some((light, darker)) => {
+                    if dark {
+                        darker.as_str()
+                    } else {
+                        light.as_str()
+                    }
+                }
+                None => {
+                    if dark {
+                        *darker
+                    } else {
+                        *light
+                    }
+                }
+            };
+            let _ = writeln!(out, "{indent}{scope} .t{index} {{ fill: {color}; }}");
+            let _ = writeln!(out, "{indent}{scope} .t{index}-line {{ stroke: {color}; }}");
+        }
+    });
 }
 
 /// The charts' style: the light appearance's paints, the dark one's as the
@@ -82,8 +171,11 @@ fn rules(out: &mut String, scope: &str, dark: bool, indent: &str) {
 fn style() -> String {
     let mut out = String::from("<style>\n");
     rules(&mut out, ".chart", false, "  ");
-    out.push_str(
-        "  .chart text { font-family: system-ui, -apple-system, \"Segoe UI\", sans-serif; }\n",
+    let font = LOOK.with_borrow(|look| look.font.clone());
+    let _ = writeln!(
+        out,
+        "  .chart text {{ font-family: {}; }}",
+        font.as_deref().unwrap_or(FONT)
     );
     out.push_str("  .chart .tick { font-variant-numeric: tabular-nums; }\n");
     out.push_str("  .chart .hit { fill: transparent; }\n");
@@ -139,11 +231,12 @@ impl Chart {
 
     /// The chart's SVG, of `height` points.
     pub fn finish(&self, height: f64) -> String {
+        let chart_width = width();
         let id = escape(&self.id);
         let mut out = String::new();
         let _ = writeln!(
             out,
-            r#"<svg xmlns="http://www.w3.org/2000/svg" class="chart" width="{WIDTH}" height="{height:.0}" viewBox="0 0 {WIDTH} {height:.0}" role="img" aria-labelledby="{id}-title {id}-desc">"#
+            r#"<svg xmlns="http://www.w3.org/2000/svg" class="chart" width="{chart_width}" height="{height:.0}" viewBox="0 0 {chart_width} {height:.0}" role="img" aria-labelledby="{id}-title {id}-desc">"#
         );
         let _ = writeln!(
             out,
@@ -159,7 +252,7 @@ impl Chart {
         out.push('\n');
         let _ = writeln!(
             out,
-            r#"<rect class="surface" width="{WIDTH}" height="{height:.0}" rx="8"/>"#
+            r#"<rect class="surface" width="{chart_width}" height="{height:.0}" rx="8"/>"#
         );
         let _ = writeln!(
             out,
@@ -218,7 +311,7 @@ fn subtitle_lines(subtitle: &str) -> Vec<String> {
         } else {
             format!("{line} {word}")
         };
-        if !line.is_empty() && text_width(&wider, SUBTITLE_SIZE) * 1.1 > WIDTH - 40.0 {
+        if !line.is_empty() && text_width(&wider, SUBTITLE_SIZE) * 1.1 > width() - 40.0 {
             lines.push(std::mem::take(&mut line));
             line = word.to_owned();
         } else {
@@ -337,6 +430,48 @@ pub fn slug(parts: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_style_s_look_takes_its_width_font_paints_and_terminals_colors() {
+        let style: Style = ttybench_core::config::parse(
+            std::path::Path::new("style.toml"),
+            r##"
+            [charts]
+            width = 900
+            font = "Iosevka, monospace"
+            light = { surface = "#ffffff" }
+            dark = { grid = "#101010" }
+            terminals.kitty = { light = "#123456" }
+            "##,
+        )
+        .unwrap();
+        let terminals = ["ghostty".to_owned(), "kitty".to_owned()];
+        set_look(look_of(&style, &terminals).unwrap());
+        let css = super::style();
+        assert_eq!(width(), 900.0);
+        assert!(css.contains("font-family: Iosevka, monospace;"), "{css}");
+        assert!(css.contains(".chart .surface { fill: #ffffff; }"), "{css}");
+        assert!(
+            css.contains(".chart.dark .grid { stroke: #101010; }"),
+            "{css}"
+        );
+        // kitty's own color in its place, in both appearances; ghostty's the series'.
+        assert!(css.contains(".chart .t1 { fill: #123456; }"), "{css}");
+        assert!(css.contains(".chart.dark .t1 { fill: #123456; }"), "{css}");
+        assert!(
+            css.contains(&format!(".chart .t0 {{ fill: {}; }}", SERIES[0].0)),
+            "{css}"
+        );
+        // A paint of no name of the charts'.
+        let wrong: Style = ttybench_core::config::parse(
+            std::path::Path::new("style.toml"),
+            "[charts]\nlight = { paper = \"#ffffff\" }",
+        )
+        .unwrap();
+        assert!(look_of(&wrong, &terminals).unwrap_err().contains("paper"));
+        set_look(Look::default());
+        assert_eq!(width(), WIDTH);
+    }
 
     #[test]
     fn round_ticks_past_the_top() {

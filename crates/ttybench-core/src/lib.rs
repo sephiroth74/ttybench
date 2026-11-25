@@ -16,6 +16,7 @@ pub mod process;
 pub mod results;
 pub mod scroll;
 pub mod stats;
+pub mod style;
 pub mod terminal;
 pub mod tools;
 pub mod windows;

@@ -35,6 +35,7 @@ use serde::Deserialize;
 use ttybench_core::cli::Args;
 use ttybench_core::config;
 use ttybench_core::results::{self, RECORDS};
+use ttybench_core::style::Style;
 
 /// The report's JSON, in the session's folder.
 const REPORT: &str = "report.json";
@@ -55,7 +56,7 @@ const PAGE: &str = "index.html";
 const HISTORY: &str = "ttybench-history";
 
 /// How the charts run.
-const USAGE: &str = "ttybench charts <folder> [--out <folder>]\n       ttybench charts --history <folder> <folder>... [--out <folder>]";
+const USAGE: &str = "ttybench charts <folder> [--out <folder>] [--style <file>]\n       ttybench charts --history <folder> <folder>... [--out <folder>] [--style <file>]";
 
 fn main() -> ExitCode {
     match run() {
@@ -80,22 +81,37 @@ fn run() -> Result<(), String> {
             .drain(..count)
             .map(|folder| PathBuf::from(config::expand_home(&folder)))
             .collect();
-        let options = Args::parse(args, &["out"], &[])?;
+        let options = Args::parse(args, &["out", "style"], &[])?;
+        let style = match options.value("style") {
+            Some(path) => Style::read(Path::new(&config::expand_home(path)))?,
+            None => Style::default(),
+        };
+        svg::set_look(svg::look_of(&style, &[])?);
         return history(&folders, options.value("out"));
     }
     if args.first().is_none_or(|arg| arg.starts_with("--")) {
         return Err(format!("which session's folder?\n{USAGE}"));
     }
     let folder = PathBuf::from(config::expand_home(&args.remove(0)));
-    let options = Args::parse(args, &["out"], &[])?;
+    let options = Args::parse(args, &["out", "style"], &[])?;
     let report = read_report(&folder)?;
+    let given = options
+        .value("style")
+        .map(|path| PathBuf::from(config::expand_home(path)));
+    let style = Style::of_session(&folder, given.as_deref())?;
+    let terminals: Vec<String> = report
+        .terminals
+        .iter()
+        .map(|terminal| terminal.name.clone())
+        .collect();
+    svg::set_look(svg::look_of(&style, &terminals)?);
     let records = results::read_records(&folder.join(RECORDS))
         .map_err(|error| format!("{}: {error}", folder.join(RECORDS).display()))?;
     let out = options.value("out").map_or_else(
         || folder.join(CHARTS),
         |out| PathBuf::from(config::expand_home(out)),
     );
-    let drawn = kinds::all(&report, &records);
+    let drawn = drawn_of(kinds::all(&report, &records), &report, &style);
     write_charts(&out, &drawn)?;
     eprintln!(
         "ttybench-charts: {} charts of {} in {}",
@@ -116,6 +132,23 @@ fn run() -> Result<(), String> {
         eprintln!("ttybench-charts: {}", folder.join(PAGE).display());
     }
     Ok(())
+}
+
+/// The charts of `all` that `style` draws: of its kinds, and of its
+/// metrics, of every metric the A/B's.
+fn drawn_of(all: Vec<kinds::Drawn>, report: &model::Report, style: &Style) -> Vec<kinds::Drawn> {
+    all.into_iter()
+        .filter(|chart| style.draws_kind(chart.kind))
+        .filter(|chart| {
+            chart.kind == "ab"
+                || chart.groups.iter().any(|&at| {
+                    report
+                        .groups
+                        .get(at)
+                        .is_some_and(|group| style.draws_metric(&group.tool, &group.metric))
+                })
+        })
+        .collect()
 }
 
 /// The history of the sessions in `folders`, the oldest first, into

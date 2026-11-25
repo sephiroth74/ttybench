@@ -58,6 +58,10 @@ pub struct Session {
     /// Its budgets, which the report tells held or not.
     #[serde(rename = "budget", default)]
     pub budgets: Vec<Budget>,
+    /// Its style's file, of the session file's folder, of the report's
+    /// and the charts' looks; the built-in style of none.
+    #[serde(default)]
+    pub style: Option<String>,
 }
 
 /// A tool that a session runs, of its arguments.
@@ -260,6 +264,14 @@ impl Session {
             .as_deref()
             .map(|path| relative_to(file, &expand_home(path)))
     }
+
+    /// The style's file of the session of the file at `file`, if it names
+    /// one.
+    pub fn style_path(&self, file: &Path) -> Option<PathBuf> {
+        self.style
+            .as_deref()
+            .map(|path| relative_to(file, &expand_home(path)))
+    }
 }
 
 /// `path`, of the folder of the file at `file` where it is relative.
@@ -306,6 +318,18 @@ mod tests {
 
     fn session(text: &str) -> Session {
         config::parse(Path::new("session.toml"), text).unwrap()
+    }
+
+    #[test]
+    fn a_session_s_style_is_of_its_file_s_folder() {
+        let named =
+            session("terminals = [\"a\"]\nstyle = \"look/style.toml\"\n[[run]]\ntool = \"idle\"\n");
+        assert_eq!(
+            named.style_path(Path::new("/bench/session.toml")),
+            Some(PathBuf::from("/bench/look/style.toml"))
+        );
+        let none = session("terminals = [\"a\"]\n[[run]]\ntool = \"idle\"\n");
+        assert_eq!(none.style_path(Path::new("/bench/session.toml")), None);
     }
 
     fn known() -> BTreeSet<String> {

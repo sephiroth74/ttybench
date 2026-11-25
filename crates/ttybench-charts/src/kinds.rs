@@ -10,7 +10,7 @@ use ttybench_core::budget::{Budget, Change as Limit};
 use ttybench_core::results::Record;
 
 use crate::model::{Group, Report, Verdict};
-use crate::svg::{self, Chart, Digits, WIDTH, bar_path, escape, series, tick_text, ticks};
+use crate::svg::{self, Chart, Digits, bar_path, escape, series, tick_text, ticks};
 
 /// A chart drawn: its file's name, its title, its kind, the groups that
 /// it shows, by their place in the report's, and its SVG.
@@ -302,7 +302,7 @@ fn bars(report: &Report, at: usize, records: &[Record]) -> Option<Drawn> {
     } else {
         ticks(highest, 5)
     };
-    let span = WIDTH - LEFT - RIGHT;
+    let span = svg::width() - LEFT - RIGHT;
     let last = *ticks.last().unwrap_or(&1.0);
     let scale = |value: f64| LEFT + value.max(0.0) / last * span;
     let rings = group
@@ -392,8 +392,9 @@ fn bars(report: &Report, at: usize, records: &[Record]) -> Option<Drawn> {
             middle + 4.0,
             digits.format(summary.median)
         ));
+        let chart_width = svg::width();
         chart.push(&format!(
-            r#"<rect class="hit" x="0" y="{:.1}" width="{WIDTH}" height="{BAND}"><title>{}</title></rect>"#,
+            r#"<rect class="hit" x="0" y="{:.1}" width="{chart_width}" height="{BAND}"><title>{}</title></rect>"#,
             y - (BAND - BAR) / 2.0,
             escape(&hit)
         ));
@@ -491,7 +492,7 @@ fn distribution(report: &Report, at: usize, records: &[Record]) -> Option<Drawn>
         .fold(0.0, f64::max);
     let ticks = ticks(highest, 6);
     let last = *ticks.last().unwrap_or(&1.0);
-    let span = WIDTH - PLOT_LEFT - PLOT_RIGHT;
+    let span = svg::width() - PLOT_LEFT - PLOT_RIGHT;
     let x_of = |value: f64| PLOT_LEFT + value.max(0.0) / last * span;
     for ((top, height), shares, title) in [
         (whole, &[0.0, 0.25, 0.5, 0.75, 1.0][..], "Every sample"),
@@ -507,7 +508,7 @@ fn distribution(report: &Report, at: usize, records: &[Record]) -> Option<Drawn>
             let y = y_of(*share);
             chart.push(&format!(
                 r#"<line class="grid" x1="{PLOT_LEFT:.1}" y1="{y:.1}" x2="{:.1}" y2="{y:.1}" stroke-width="1"/>"#,
-                WIDTH - PLOT_RIGHT
+                svg::width() - PLOT_RIGHT
             ));
             chart.push(&format!(
                 r#"<text class="muted tick" x="{:.1}" y="{:.1}" font-size="11" text-anchor="end">{} %</text>"#,
@@ -561,7 +562,7 @@ fn distribution(report: &Report, at: usize, records: &[Record]) -> Option<Drawn>
     }
     chart.push(&format!(
         r#"<text class="muted" x="{:.1}" y="{:.1}" font-size="11" text-anchor="end">{}</text>"#,
-        WIDTH - PLOT_RIGHT,
+        svg::width() - PLOT_RIGHT,
         bottom + 30.0,
         escape(unit)
     ));
@@ -640,7 +641,7 @@ fn intervals(report: &Report, at: usize, records: &[Record]) -> Option<Drawn> {
         .fold(0.0, f64::max);
     let x_ticks = ticks(longest, 6);
     let x_last = *x_ticks.last().unwrap_or(&1.0);
-    let span = WIDTH - PLOT_LEFT - PLOT_RIGHT;
+    let span = svg::width() - PLOT_LEFT - PLOT_RIGHT;
     let x_of = |seconds: f64| PLOT_LEFT + seconds / x_last * span;
     const PANEL: f64 = 90.0;
     const GAP: f64 = 34.0;
@@ -664,7 +665,7 @@ fn intervals(report: &Report, at: usize, records: &[Record]) -> Option<Drawn> {
             let y = y_of(*tick);
             chart.push(&format!(
                 r#"<line class="grid" x1="{PLOT_LEFT:.1}" y1="{y:.1}" x2="{:.1}" y2="{y:.1}" stroke-width="1"/>"#,
-                WIDTH - PLOT_RIGHT
+                svg::width() - PLOT_RIGHT
             ));
             chart.push(&format!(
                 r#"<text class="muted tick" x="{:.1}" y="{:.1}" font-size="11" text-anchor="end">{}</text>"#,
@@ -677,11 +678,11 @@ fn intervals(report: &Report, at: usize, records: &[Record]) -> Option<Drawn> {
             let y = y_of(refresh);
             chart.push(&format!(
                 r#"<line class="base" x1="{PLOT_LEFT:.1}" y1="{y:.1}" x2="{:.1}" y2="{y:.1}" stroke-width="1"/>"#,
-                WIDTH - PLOT_RIGHT
+                svg::width() - PLOT_RIGHT
             ));
             chart.push(&format!(
                 r#"<text class="muted" x="{:.1}" y="{:.1}" font-size="11" text-anchor="end">a refresh, {refresh:.1} {}</text>"#,
-                WIDTH - PLOT_RIGHT,
+                svg::width() - PLOT_RIGHT,
                 y - 4.0,
                 escape(unit)
             ));
@@ -818,7 +819,7 @@ fn gpu(report: &Report, at: usize) -> Option<Drawn> {
         .fold(0.0, f64::max);
     let ticks = ticks(highest, 5);
     let last = *ticks.last().unwrap_or(&1.0);
-    let span = WIDTH - LEFT - RIGHT;
+    let span = svg::width() - LEFT - RIGHT;
     let scale = |value: f64| LEFT + value / last * span;
     vertical_axis(&mut chart, &ticks, &scale, (top, bottom), LEFT, "");
     for (index, (place, terminal, mine, theirs)) in rows.iter().enumerate() {
@@ -850,8 +851,9 @@ fn gpu(report: &Report, at: usize) -> Option<Drawn> {
             digits.format(*mine),
             digits.format(*theirs)
         ));
+        let chart_width = svg::width();
         chart.push(&format!(
-            r#"<rect class="hit" x="0" y="{:.1}" width="{WIDTH}" height="{BAND}"><title>{}</title></rect>"#,
+            r#"<rect class="hit" x="0" y="{:.1}" width="{chart_width}" height="{BAND}"><title>{}</title></rect>"#,
             y - (BAND - BAR) / 2.0,
             escape(&format!(
                 "{terminal}: its own {} {unit}, WindowServer's {} {unit}",
@@ -930,7 +932,7 @@ fn ab(report: &Report) -> Option<Drawn> {
     both.extend(half.iter().skip(1));
     const RIGHT_ROOM: f64 = 190.0;
     let left = 24.0;
-    let width = WIDTH - left - RIGHT_ROOM;
+    let width = svg::width() - left - RIGHT_ROOM;
     let x_of = |percent: f64| left + (percent.clamp(-last, last) + last) / (2.0 * last) * width;
     let title = format!("A/B: {} against {}", ab.b, ab.a);
     let mut description = format!(
@@ -1046,8 +1048,9 @@ fn ab(report: &Report) -> Option<Drawn> {
             y + 4.0,
             change.verdict.words()
         ));
+        let chart_width = svg::width();
         chart.push(&format!(
-            r#"<rect class="hit" x="0" y="{row_top:.1}" width="{WIDTH}" height="{ROW}"><title>{}</title></rect>"#,
+            r#"<rect class="hit" x="0" y="{row_top:.1}" width="{chart_width}" height="{ROW}"><title>{}</title></rect>"#,
             escape(&hit)
         ));
     }

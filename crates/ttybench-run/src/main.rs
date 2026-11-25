@@ -32,6 +32,7 @@ use ttybench_core::cli::{self, Args};
 use ttybench_core::config::{self, Terminals, expand_home};
 use ttybench_core::payload::{self, Payload};
 use ttybench_core::results::{self, Load, RECORDS};
+use ttybench_core::style::{self, Style};
 use ttybench_core::{process, terminal, tools};
 
 /// The copy of the session's file in its folder, which `--resume` reads.
@@ -85,6 +86,9 @@ struct Opened {
     text: String,
     /// The terminals' file's text, which the folder keeps.
     terminals_text: String,
+    /// The style's file's text, checked, which the folder keeps, if the
+    /// session names one.
+    style_text: Option<String>,
     /// The terminals.
     terminals: Terminals,
     /// The session's folder.
@@ -107,6 +111,17 @@ impl Opened {
             .map_err(|error| format!("{}: {error}", terminals_path.display()))?;
         let terminals =
             config::parse(&terminals_path, &terminals_text).map_err(|error| error.to_string())?;
+        // The style checked before any run, kept with the session.
+        let style_text = match session.style_path(file) {
+            Some(path) => {
+                Style::read(&path)?;
+                Some(
+                    std::fs::read_to_string(&path)
+                        .map_err(|error| format!("{}: {error}", path.display()))?,
+                )
+            }
+            None => None,
+        };
         let folder = folder.map_or_else(
             || session.folder(file, &local_date()),
             |folder| PathBuf::from(expand_home(folder)),
@@ -115,6 +130,7 @@ impl Opened {
             session,
             text,
             terminals_text,
+            style_text,
             terminals,
             folder,
             resume: false,
@@ -132,10 +148,13 @@ impl Opened {
             .map_err(|error| format!("{}: {error}", terminals_path.display()))?;
         let terminals =
             config::parse(&terminals_path, &terminals_text).map_err(|error| error.to_string())?;
+        // Its copy of the style, which the report reads of the folder.
+        let style_text = None;
         Ok(Self {
             session,
             text,
             terminals_text,
+            style_text,
             terminals,
             folder: folder.to_path_buf(),
             resume: true,
@@ -227,7 +246,11 @@ fn run() -> Result<bool, String> {
         }
         std::fs::create_dir_all(folder)
             .map_err(|error| format!("{}: {error}", folder.display()))?;
-        for (name, text) in [(SESSION, &opened.text), (TERMINALS, &opened.terminals_text)] {
+        let style = opened.style_text.as_ref().map(|text| (style::FILE, text));
+        for (name, text) in [(SESSION, &opened.text), (TERMINALS, &opened.terminals_text)]
+            .into_iter()
+            .chain(style)
+        {
             std::fs::write(folder.join(name), text)
                 .map_err(|error| format!("{}: {error}", folder.join(name).display()))?;
         }

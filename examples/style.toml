@@ -1,0 +1,39 @@
+# A style of a session's report and charts, every key: name it in a
+# session's file as `style = "style.toml"`, or give it to `ttybench report`
+# and `ttybench charts` as `--style examples/style.toml`. Every key is
+# optional; the built-in style is the defaults.
+
+[charts]
+# The kinds drawn: bars, distribution, intervals, gpu, ab.
+kinds = ["bars", "distribution", "intervals", "gpu", "ab"]
+# The metrics drawn, as tool.metric; all of them without the key.
+metrics = ["startup.window_ms", "throughput.quiet_mib_s", "latency.latency_ms"]
+# A chart's width, in points, from 320 to 2000.
+width = 760
+# The font's family, as CSS writes it.
+font = "system-ui, -apple-system, sans-serif"
+# The paints of each appearance, of #rrggbb.
+light = { surface = "#ffffff", grid = "#e6e6e6" }
+dark = { surface = "#111111", grid = "#2a2a2a" }
+
+# A terminal's own color, in place of the series' color of its place.
+[charts.terminals.ghostty]
+light = "#7c3aed"
+dark = "#a78bfa"
+
+[charts.terminals.kitty]
+light = "#0f766e"
+
+[report]
+# A metric's table's columns, in their order: median, interval, p95, mean,
+# range, samples, cycles.
+columns = ["median", "interval", "p95", "samples", "cycles"]
+# A column's title.
+titles = { interval = "95 % interval" }
+# A metric's unit, as tool.metric.
+units = { "memory.footprint_mib" = "MB" }
+
+[ab]
+# Each metric's statistic of the A/B: median, mean, p95, p99, min or max.
+"idle.cpu_percent" = "mean"
+"latency.latency_ms" = "median"
